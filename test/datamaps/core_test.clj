@@ -66,7 +66,8 @@
     (is (= "Joli" (:lastname dan-entity)))
     (is (= #{"lily" "zorro" "islay"} (set (:cats dan-entity))))
     (is (= #{"ginny"} (set (:dogs dan-entity))))
-    (is (= "Annapolis" (city facts (:location dan-entity))))))
+    (is (= "Annapolis" (get-in dan-entity [:location :city])))
+    (is (= 21224 (get-in dan-entity [:location :neighborhood :zip])))))
 
 
 (deftest queryable []
