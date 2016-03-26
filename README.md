@@ -36,7 +36,7 @@ intended to be added to or retracted from so datamaps is very much _not_ a datab
     * `:val` for scalars
     * `:ref` for nested maps
     * `:coll` for nested collections
-  Since attributes aren't installed, storing basic metadata likes
+* Since attributes aren't installed, storing basic metadata like
   this allows for rebuilding maps from their IDs.  Very useful if
   the data you want is actually a nested sub map. 
 * the `q` function maintains the invariant of `datomic.api/q`,
