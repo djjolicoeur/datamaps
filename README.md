@@ -23,7 +23,7 @@ I spend a lot of time writing code to pull apart maps and structure them in a
 way that suits our domain needs.  Spector does a great job of reducing the complexity
 that is inherent in dealing with this situation, but I couldn't help thinking there
 was a way to apply datalog to this problem to simplify the process, especially since most
-applications I write already inlcude the datomic api and leveraging that would elide the
+of the applications I write already inlcude the datomic api and leveraging that would elide the
 need to keep track of another DSL.
 
 Consider the following example: 
@@ -167,15 +167,15 @@ build the results set.
 * each `[k v]` tuple in a map is added to the fact
   table as `[<ID> k v]`. this is applied recusivly
   to all child structures.
-* Each `k` in each `[k v]` tuple is stored as `[<ID> k <TYPE>]` wher
+* Each `k` in each `[k v]` tuple is stored as `[<ID> k <TYPE>]` where
   type can be:
     * `:datamaps.core/val` for scalars
     * `:datamaps.core/ref` for nested maps
     * `:datamaps.core/coll` for nested collections
 * Since attributes aren't installed, storing basic metadata like
   this allows for rebuilding maps from their IDs.  Very useful if
-  the data you want is actually a nested sub map. 
-* the `q` function maintains the invariant of `datomic.api/q`,
+  the data you want is actually a nested map. 
+* the `datamaps.core/q` function maintains the invariant of `datomic.api/q`,
   but filters all of our metadata facts out before applying the
   query.
 * You can also query the metadata via `meta-q` which filters
