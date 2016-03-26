@@ -6,9 +6,9 @@ query structured maps via datalog.
 ## Status
 
  * Brand spanking new.  I hacked this together while I was stuck on a commuter bus
-   sans-internet so it's rough at present -- Pet Project status. 
- * Performance is atrocious, but can be improved
- * Needs more robust testing and validation. 
+   sans-internet so it's rough at present -- Pet Project status.
+ * Performance is atrocious, but can be improved.
+ * Needs more robust testing and validation.
 
 ## Motivation
 
@@ -47,8 +47,8 @@ instance dealing with something like this
                 {:city "Baltimore"
                  :state "MD"
                  :zip 21224}]}
-                 
-               
+
+
    {:firstname "Casey"
     :lastname "Joli"
     :cats ["islay" "zorro" "lily"]
@@ -213,6 +213,43 @@ build the results set.
 ;;=>   :city "Annapolis"},
 ;;=>  :lastname "Joli"}
 ```
+
+We can also use datomics aggregate functions to easily run aggregations over
+maps as opposed to building up sub collections to operate on.
+for example some bank account data
+
+```clojure
+(def bank-accounts
+  [{:user "Dan"
+    :account [{:type :checking
+               :balance 1000.0}
+               {:type :savings
+                :balance 10000.0}
+               {:type :ira
+                :balance 15000.0}]}
+   {:user "Casey"
+    :account [{:type :checking
+               :balance 2000.0}
+              {:type :savings
+               :balance 14000.0}
+              {:type :ira
+               :balance 16000.0}]}])
+
+;; build a fact table
+
+(def account-facts (d/maps->facts bank-accounts))
+
+;; Lets see how much the bank has in all checking accounts
+
+(d/q '[:find (sum ?b) .
+       :where
+       [?a :type :checking]
+       [?a :balance ?b]]
+     account-facts) ;;=> 3000.0
+
+```
+
+These are all trivial examples, but I think they illustrate the larger potential, here.
 
 ## License
 

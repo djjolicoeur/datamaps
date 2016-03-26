@@ -73,3 +73,25 @@
 (deftest queryable []
   (let [facts (maps->facts test-users)]
     (is (= #{"Mike" "Katie"} (set (west-annapolitans facts))))))
+
+
+(def key-collisions
+  {:foo {:bar [{:foo [1 2 3]}] :baz {:bar 5}}})
+
+(deftest test-collisions []
+  (let [facts (map->facts key-collisions)
+        sub-id (q '[:find ?e .
+                    :where
+                    [?e :baz ?b]
+                    [?b :bar 5]]
+                  facts)
+        sub-ent (entity facts sub-id)
+        root-id (q '[:find ?e .
+                     :where
+                     [?e :foo ?f]
+                     [?f :bar ?b]
+                     [?b :foo 1]]
+                   facts)
+        root-ent (entity facts root-id)]
+    (is (= 5 (get-in sub-ent [:baz :bar])))
+    (is (= 5 (get-in root-ent [:foo :baz :bar])))))
