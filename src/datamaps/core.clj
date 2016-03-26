@@ -61,7 +61,7 @@
 (declare map->facts)
 (declare map-entry->fact)
 
-(defn coll->facts
+(defn- coll->facts
   "Handles converting collections to facts, including collections
    of maps"
   [id k coll]
@@ -70,7 +70,7 @@
        (reduce concat)
        (cons [id k coll-type])))
 
-(defn map-entry->fact
+(defn- map-entry->fact
   "Generate a fact given an id and [key value] tuple.
    the tuple may contain nested structures"
   ([is-child? id [k v]]
@@ -83,7 +83,7 @@
   ([id [k v]]
    (map-entry->fact nil id [k v])))
 
-(defn map->facts
+(defn- map->facts
   "takes a single map and converts it to a set of
    three-tuples  of [<generated id> <key> <value>]. Nested
    maps well be assoicated by
@@ -106,7 +106,7 @@
           (cons [parent key ref-type])))))
 
 
-(defn maps->facts
+(defn- maps->facts
   "Application of map->facts to a sequence of maps to
    create a set of facts"
   [ms]
@@ -171,6 +171,7 @@
   "Given a map and an entity ID, output the map
    representation of the entity"
   [facts id]
+  {:pre [(satisfies? IFactStore facts)]}
   (->> id
        (entity->datums facts)
        (datums->map facts id)))
