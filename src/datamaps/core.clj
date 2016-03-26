@@ -88,6 +88,18 @@
   (set (mapcat map->facts ms)))
 
 
+(defn facts
+  "Given a map or a list of maps, generate a table of facts"
+  [m]
+  {:pre [(or (map? m) (sequential? m))]}
+  (cond
+    (map? m) (map->facts m)
+    (sequential? m) (maps->facts m)
+    true (throw
+          (ex-info "Unsupported Type for generating facts!"
+                   {:causes #{:unsupported-type}
+                    :type (type m)}))))
+
 ;; Functions for retrieving entities by their generated ID
 
 (defn attr-meta

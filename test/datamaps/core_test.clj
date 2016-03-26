@@ -59,7 +59,7 @@
      facts location-ref))
 
 (deftest entity-mapping []
-  (let [facts (maps->facts test-users)
+  (let [facts (facts test-users)
         dan (get-dan facts)
         dan-entity (entity facts dan)]
     (is (= "Dan" (:firstname dan-entity)))
@@ -71,7 +71,7 @@
 
 
 (deftest queryable []
-  (let [facts (maps->facts test-users)]
+  (let [facts (facts test-users)]
     (is (= #{"Mike" "Katie"} (set (west-annapolitans facts))))))
 
 
@@ -79,7 +79,7 @@
   {:foo {:bar [{:foo [1 2 3]}] :baz {:bar 5}}})
 
 (deftest test-collisions []
-  (let [facts (map->facts key-collisions)
+  (let [facts (facts key-collisions)
         sub-id (q '[:find ?e .
                     :where
                     [?e :baz ?b]
