@@ -15,9 +15,9 @@ query structured maps via datalog.
 I spend a lot of time writing code to pull apart maps and structure them in a
 way that suits our domain needs.  Spector does a great job of reducing the complexity
 that is inherent in dealing with this situation, but I couldn't help thinking there
-was a way to apply datalog to this problem to simplify the proccess.
+was a way to apply datalog to this problem to simplify the process.
 
-So instead of writing code like this:
+So I don't have to write code like this anymore:
 
 ```clojure
 (defn user->demographics [m]
@@ -30,9 +30,9 @@ So instead of writing code like this:
 (map user->demographics test-users)
 ```
 
-Which arguably isn't too bad in this example, but quickly gets out of hand the deeper things
-get nested. Especially if you have to filter a nested collection for a specific member for
-instance dealing with something like this
+Arguably this example isn't too bad, but this strategy quickly gets out of hand
+the deeper things get nested. Especially if you have to filter a nested
+collection for a specific member. For instance when dealing with something like this
 
 ```clojure
 (def test-users
@@ -63,9 +63,11 @@ instance dealing with something like this
                  :primary true}]}])
 ```
 
+Collections nested in maps can lead to some ugly code, fast.
+
 If I can just query for the values I want without having to make several map access calls,
 and avoid filtering component collections that would be ideal!
-datamaps lets you do something like this.
+datamaps lets you do something like this to tackle the problem.
 
 ```clojure
 (require '[datamaps.core :as dm])
@@ -101,10 +103,10 @@ and get back
   :demo/zip 21409})
 ```
 
-in one shot
+Without having to result to filter fns and other strategies.
 
 Even better, we can filter on params in-line with the query.  Lets say I only
-want to bring back people from the 21401 zip code
+want to bring back people who currently live in the 21401 zip code.
 
 
 ```clojure
@@ -135,7 +137,7 @@ want to bring back people from the 21401 zip code
 ;;=>  :demo/zip 21401})
 ```
 
-As opposed to filtering a list, then transforming, or loop recuring over the list to
+As opposed to filtering a list, then transforming, or loop recurring over the list to
 build the results set.
 
 
@@ -214,7 +216,7 @@ build the results set.
 ;;=>  :lastname "Joli"}
 ```
 
-We can also use datomics aggregate functions to easily run aggregations over
+We can also use Datomic's aggregate functions to easily run aggregations over
 maps as opposed to building up sub collections to operate on.
 for example some bank account data
 
