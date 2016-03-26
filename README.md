@@ -304,11 +304,11 @@ for example some bank account data
 
 ;; Lets see how much the bank has in all checking accounts
 
-(d/q '[:find (sum ?b) .
-       :where
-       [?a :type :checking]
-       [?a :balance ?b]]
-     account-facts) ;;=> 3000.0
+(dm/q '[:find (sum ?b) .
+        :where
+        [?a :type :checking]
+        [?a :balance ?b]]
+      account-facts) ;;=> 3000.0
 
 ```
 
