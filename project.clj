@@ -6,4 +6,5 @@
   :profiles {:dev {:plugins [[lein-kibit "0.1.2"]]}
              :provided {:dependencies
                         [[org.clojure/clojure "1.7.0"]
-                         [com.datomic/datomic-free "0.9.5350"]]}})
+                         [datascript "0.15.0"]]}})
+;;[com.datomic/datomic-free "0.9.5350"]

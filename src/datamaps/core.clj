@@ -1,5 +1,5 @@
 (ns datamaps.core
-  (:require [datomic.api :as d]))
+  (:require [datamaps.query :as d]))
 
 
 ;; Due to the unstsructured nature of map keys (i.e. no attribute constraints),
@@ -95,8 +95,7 @@
      (->> (seq m)
           (map (partial map-entry->fact id))
           (filter identity)
-          (reduce concat)
-          set)))
+          (reduce concat))))
   ([parent key m]
    (let [id (java.util.UUID/randomUUID)]
      (->> (seq m)
@@ -110,7 +109,7 @@
   "Application of map->facts to a sequence of maps to
    create a set of facts"
   [ms]
-  (set (mapcat map->facts ms)))
+  (mapcat map->facts ms))
 
 
 (defn- facts*
@@ -127,7 +126,7 @@
 (defn facts
   [m]
   (let [facts (facts* m)]
-    (FactStore. (filter-meta facts) (filter-not-meta facts))))
+    (FactStore. (filter-meta facts) (set (filter-not-meta facts)))))
 
 ;; Functions for retrieving entities by their generated ID
 

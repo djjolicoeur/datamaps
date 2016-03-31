@@ -95,3 +95,55 @@
         root-ent (entity facts root-id)]
     (is (= 5 (get-in sub-ent [:baz :bar])))
     (is (= 5 (get-in root-ent [:foo :baz :bar])))))
+
+
+
+(def dan-test-credits [100.0 100.0 200.0 200.0 1000.0 1000.0 157.66])
+
+(def dan-test-debits [-500.0 -675.55])
+
+(def casey-test-credits [1756.66 987.55 990.45 345.65])
+
+(def casey-test-debits [-357.44 -432.11 -10.54])
+
+(def bank-maps
+  [{:user "Dan"
+    :account [{:type :checking
+               :credits dan-test-credits
+               :debits dan-test-debits}]}
+   {:user "Casey"
+    :account [{:type :checking
+               :credits casey-test-credits
+               :debits casey-test-debits}]}])
+
+(defn bank-credit-q [bank-facts user]
+  (q '[:find (sum ?c) .
+       :in $ ?u
+       :where
+       [?e :user ?u]
+       [?e :account ?a]
+       [?a :type :checking]
+       [?a :credits ?c]]
+     bank-facts user))
+
+(defn bank-debit-q [bank-facts user]
+  (q '[:find (sum ?d) .
+       :in $ ?u
+       :where
+       [?e :user ?u]
+       [?e :account ?a]
+       [?a :type :checking]
+       [?a :debitss ?d]]
+     bank-facts user))
+
+
+(deftest collections-not-deduped []
+  (let [bank-facts (facts bank-maps)
+        dc (bank-credit-q bank-facts "Dan")
+        dd (bank-debit-q bank-facts "Dan")
+        cc (bank-credit-q bank-facts "Casey")
+        cd (bank-debit-q bank-facts "Casey")]
+    (is (= (apply + dan-test-credits)) dc)
+    (is (= (apply + dan-test-debits)) dd)
+    (is (= (apply + casey-test-credits)) cc)
+    (is (= (apply + casey-test-debits)) cd)))
