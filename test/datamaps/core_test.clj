@@ -59,42 +59,45 @@
      facts location-ref))
 
 (deftest entity-mapping []
-  (let [facts (facts test-users)
-        dan (get-dan facts)
-        dan-entity (entity facts dan)]
-    (is (= "Dan" (:firstname dan-entity)))
-    (is (= "Joli" (:lastname dan-entity)))
-    (is (= #{"lily" "zorro" "islay"} (set (:cats dan-entity))))
-    (is (= #{"ginny"} (set (:dogs dan-entity))))
-    (is (= "Annapolis" (get-in dan-entity [:location :city])))
-    (is (= 21224 (get-in dan-entity [:location :neighborhood :zip])))))
+  (testing "Test map elements get mapped to entities"
+    (let [facts (facts test-users)
+          dan (get-dan facts)
+          dan-entity (entity facts dan)]
+      (is (= "Dan" (:firstname dan-entity)))
+      (is (= "Joli" (:lastname dan-entity)))
+      (is (= #{"lily" "zorro" "islay"} (set (:cats dan-entity))))
+      (is (= #{"ginny"} (set (:dogs dan-entity))))
+      (is (= "Annapolis" (get-in dan-entity [:location :city])))
+      (is (= 21224 (get-in dan-entity [:location :neighborhood :zip]))))))
 
 
 (deftest queryable []
-  (let [facts (facts test-users)]
-    (is (= #{"Mike" "Katie"} (set (west-annapolitans facts))))))
+  (testing "Test generated facts are queryable"
+    (let [facts (facts test-users)]
+      (is (= #{"Mike" "Katie"} (set (west-annapolitans facts)))))))
 
 
 (def key-collisions
   {:foo {:bar [{:foo [1 2 3]}] :baz {:bar 5}}})
 
 (deftest test-collisions []
-  (let [facts (facts key-collisions)
-        sub-id (q '[:find ?e .
-                    :where
-                    [?e :baz ?b]
-                    [?b :bar 5]]
-                  facts)
-        sub-ent (entity facts sub-id)
-        root-id (q '[:find ?e .
+  (testing "Keys are defined on a per-map basis"
+   (let [facts (facts key-collisions)
+         sub-id (q '[:find ?e .
                      :where
-                     [?e :foo ?f]
-                     [?f :bar ?b]
-                     [?b :foo 1]]
+                     [?e :baz ?b]
+                     [?b :bar 5]]
                    facts)
-        root-ent (entity facts root-id)]
-    (is (= 5 (get-in sub-ent [:baz :bar])))
-    (is (= 5 (get-in root-ent [:foo :baz :bar])))))
+         sub-ent (entity facts sub-id)
+         root-id (q '[:find ?e .
+                      :where
+                      [?e :foo ?f]
+                      [?f :bar ?b]
+                      [?b :foo 1]]
+                    facts)
+         root-ent (entity facts root-id)]
+     (is (= 5 (get-in sub-ent [:baz :bar])))
+     (is (= 5 (get-in root-ent [:foo :baz :bar]))))))
 
 
 
@@ -138,12 +141,40 @@
 
 
 (deftest collections-not-deduped []
-  (let [bank-facts (facts bank-maps)
-        dc (bank-credit-q bank-facts "Dan")
-        dd (bank-debit-q bank-facts "Dan")
-        cc (bank-credit-q bank-facts "Casey")
-        cd (bank-debit-q bank-facts "Casey")]
-    (is (= (apply + dan-test-credits)) dc)
-    (is (= (apply + dan-test-debits)) dd)
-    (is (= (apply + casey-test-credits)) cc)
-    (is (= (apply + casey-test-debits)) cd)))
+  (testing "Collections maintain all original elements"
+   (let [bank-facts (facts bank-maps)
+         dc (bank-credit-q bank-facts "Dan")
+         dd (bank-debit-q bank-facts "Dan")
+         cc (bank-credit-q bank-facts "Casey")
+         cd (bank-debit-q bank-facts "Casey")]
+     (is (= (apply + dan-test-credits)) dc)
+     (is (= (apply + dan-test-debits)) dd)
+     (is (= (apply + casey-test-credits)) cc)
+     (is (= (apply + casey-test-debits)) cd))))
+
+
+(deftest querying-across-fact-sets []
+  (testing "Test the ability to query across generated fact sets"
+   (let [user-facts (facts test-users)
+         bank-facts (facts bank-maps)
+         results (q '[:find ?tf ?bf ?c ?at
+                      :in $1 $2
+                      :where
+                      [$1 ?tu :firstname ?tf]
+                      [$2 ?bu :user ?bf]
+                      [(= ?bf ?tf)]
+                      [$1 ?tu :location ?l]
+                      [$1 ?l :city ?c]
+                      [$2 ?bu :account ?a]
+                      [$2 ?a :type ?at]] user-facts bank-facts)
+         result-set (set results)]
+     (is (= #{["Dan" "Dan" "Annapolis" :checking]
+              ["Casey" "Casey" "Salisbury" :checking]} result-set)))))
+
+(deftest test-pull []
+  (testing "Test ability to pull"
+    (let [tfacts (facts test-users)
+          dan-id (get-dan tfacts)
+          pulled (pull tfacts '[* {:location [:city]}] dan-id)]
+      (is (= 1 (count (:location pulled))))
+      (is (= "Annapolis" (get-in pulled [:location :city]))))))
