@@ -1,6 +1,8 @@
 (ns datamaps.core-test
   (:require [clojure.test :refer :all]
-            [datamaps.core :refer :all]))
+            [datamaps.core :refer :all]
+            [datamaps.facts :as df]
+            [datomic.api :as datomic]))
 
 
 (def test-users
@@ -178,3 +180,52 @@
           pulled (pull tfacts '[* {:location [:city]}] dan-id)]
       (is (= 1 (count (:location pulled))))
       (is (= "Annapolis" (get-in pulled [:location :city]))))))
+
+
+(def schema
+  [{:db/id #db/id[:db.part/db]
+    :db/ident :demo/firstname
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/one
+    :db.install/_attribute :db.part/db}
+
+   {:db/id #db/id[:db.part/db]
+    :db/ident :demo/lastname
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/one
+    :db.install/_attribute :db.part/db}])
+
+(def datomic-facts
+  [{:db/id #db/id[:db.part/user]
+    :demo/firstname "Dan"
+    :demo/lastname  "Joli"}
+   {:db/id #db/id[:db.part/user]
+    :demo/firstname "Casey"
+    :demo/lastname "Joli"}])
+
+(deftest datomic-integration []
+  (testing "Testing ability to integrate with datomic query engine"
+    (let [_ (datomic/create-database "datomic:mem://datomic-talk")
+          conn (datomic/connect "datomic:mem://datomic-talk")
+          _ @(datomic/transact conn schema)
+          _ @(datomic/transact conn datomic-facts)
+          tfacts (facts test-users)
+          results (datomic/q
+                   '[:find ?datomic-firstname ?datomic-lastname ?map-firstname
+                     ?map-lastname ?map-city ?map-state
+                     :in $1 $2
+                     :where
+                     [$1 ?e :demo/firstname ?datomic-firstname]
+                     [$1 ?e :demo/lastname ?datomic-lastname]
+                     [$2 ?fe :firstname ?map-firstname]
+                     [$2 ?fe :lastname ?map-lastname]
+                     [$2 ?fe :location ?l]
+                     [$2 ?l :city ?map-city]
+                     [$2 ?l :state ?map-state]
+                     [(= ?datomic-firstname ?map-firstname)]
+                     [(= ?datomic-lastname ?map-lastname)]]
+                   (datomic/db conn) (df/fact-partition tfacts))
+          _ (datomic/delete-database "datomic:mem://datomic-talk")]
+      (is (= results
+             #{["Casey" "Joli" "Casey" "Joli" "Salisbury" "MD"]
+               ["Dan" "Joli" "Dan" "Joli" "Annapolis" "MD"]})))))
