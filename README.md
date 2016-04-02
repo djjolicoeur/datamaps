@@ -9,11 +9,11 @@ query arbitrary maps via datalog.
    sans-internet so it's rough at present -- Pet Project status.
  * Performance is atrocious, but can be improved. Space and time complexities have not
    even been considered at this point.
- * ~Does not support the Pull api currently~  added in 0.1.1-SNAPSHOT
- * ~Need to figure out if I can add the ability to choose query engine provider
+ * ~~Does not support the Pull api currently~~  added in 0.1.1-SNAPSHOT
+ * ~~Need to figure out if I can add the ability to choose query engine provider
    so people can use datascripts engine, should they choose.  I use datomic in my
-   projects, so I went with that first.~ as of 0.1.1-SNAPSHOT, the datascript query engine
-   is being used
+   projects, so I went with that first.~~ as of 0.1.1-SNAPSHOT,
+   the datascript query engine is being used
  * Needs more robust testing and validation as it is almost certainly full of bugs and
   warts.
 
@@ -393,7 +393,7 @@ will not work in this scenario.
 
 For example:
 
-```
+```clojure
 (require '[datamaps.core :as d])
 (require '[datamaps.facts :as df])
 (require '[datomic.api :as datomic])
