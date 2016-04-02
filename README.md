@@ -1,7 +1,7 @@
 # datamaps
 
-A Clojure library designed to leverage datomics query engine to
-query arbitrary maps via datalog.
+A Clojure library designed to leverage datalog queries to
+query arbitrary maps.
 
 ## Status
 
@@ -411,7 +411,7 @@ For example:
          :db/cardinality :db.cardinality/one
          :db.install/_attribute :db.part/db}])
 
-(def facts
+(def datomic-facts
         [{:db/id #db/id[:db.part/user]
           :demo/firstname "Dan"
           :demo/lastname  "Joli"}
@@ -422,6 +422,10 @@ For example:
 (datomic/create-database "datomic:mem://test-db")
 
 (def conn (datomic/connect "datomic:mem://test-db"))
+
+@(datomic/transact conn schema)
+
+@(datomic/transact conn datomic-facts)
 
 (def facts (d/facts test-users)) ;;from above examples
 
@@ -442,7 +446,7 @@ For example:
     (datomic/db conn) (df/fact-partition facts)) ;;must use the fact partition!!
 
 ;;=> #{["Casey" "Joli" "Casey" "Joli" "Salisbury" "MD"]
-       ["Dan" "Joli" "Dan" "Joli" "Annapolis" "MD"]}
+;;=>   ["Dan" "Joli" "Dan" "Joli" "Annapolis" "MD"]}
 ```
 These are all trivial examples, but I think they illustrate the larger potential, here.
 
