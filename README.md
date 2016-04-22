@@ -3,7 +3,14 @@
 A Clojure library designed to leverage datalog queries to
 query arbitrary maps.
 
-## Status
+## Build Status and Dependency Information
+
+[![Circle CI](https://circleci.com/gh/djjolicoeur/datamaps.svg?style=svg)](https://circleci.com/gh/djjolicoeur/datamaps)
+
+
+[![Clojars Project](https://img.shields.io/clojars/v/datamaps.svg)](https://clojars.org/datamaps)
+
+## Project Status
 
  * Brand spanking new.  I hacked this together while I was stuck on a commuter bus
    sans-internet so it's rough at present -- Pet Project status.
