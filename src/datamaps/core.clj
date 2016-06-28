@@ -44,9 +44,9 @@
 (defn id->entity
   [facts id]
   (q '[:find ?e .
-       :in $ ?id
+       :in $ ?e
        :where
-       [?id _ _]]
+       [?e _ _]]
      facts id))
 
 (defn entity->datums
@@ -98,18 +98,20 @@
 (defprotocol IEntity
   (touch [e]))
 
-(deftype Entity [facts id]
+(deftype Entity [facts id touched]
   IEntity
   (touch [e]
-    (touch-entity e))
+    (if touched e
+        (Entity. facts id (touch-entity e))))
 
   Object
-  (toString [_] (if (id->entity facts id)
-                  (str {:db/id id})
-                  nil))
+  (toString [_]
+    (if touched
+      (str touched)
+      (str {:db/id id})))
   clojure.lang.Seqable
   (seq [e]
-    (seq (touch e)))
+    (seq (touch-entity e)))
 
   clojure.lang.Associative
   (equiv [e o]
@@ -122,7 +124,7 @@
   (empty [e]         (throw (UnsupportedOperationException.)))
   (assoc [e k v]     (throw (UnsupportedOperationException.)))
   (cons  [e [k v]]   (throw (UnsupportedOperationException.)))
-  (count [e]         (count  (touch e)))
+  (count [e]         (count  (touch-entity e)))
 
   clojure.lang.ILookup
   (valAt [e k]       (entity-lookup e k))
@@ -133,7 +135,7 @@
   (invoke [e k not-found] (entity-lookup e k not-found)))
 
 (defmethod print-method Entity [e ^java.io.Writer w]
-  (.write w (str {:db/id (.-id e)})))
+  (.write w (str e)))
 
 (defmethod print-dup Entity [e w]
   (print-method e w))
@@ -158,7 +160,7 @@
                         :in $ ?e ?a
                         :where [?e ?a ?v]]
                       (.-facts e) (.-id e) k)]
-    (Entity. (.-facts e) ref)))
+    (Entity. (.-facts e) ref nil)))
 
 (defn- nested-ref
   [e coll-member]
@@ -170,7 +172,7 @@
 (defn- coll-member
   [e member]
   (if-let [nested-entity (nested-ref e member)]
-    (Entity. (.-facts e) member)
+    (Entity. (.-facts e) member nil)
     member))
 
 (defn- output-coll
@@ -186,8 +188,8 @@
   (when-let [ref (dq/q '[:find ?v .
                          :in $ ?e ?k
                          :where [?e ?k ?v]]
-                       (df/reverse-partition (.-facts e)) k)]
-    (Entity. (.-facts e) ref)))
+                       (df/reverse-partition (.-facts e)) (.-id e) k)]
+    (Entity. (.-facts e) ref nil)))
 
 (defn- output-member
   [e k t]
@@ -195,7 +197,8 @@
     ::df/val (output-val e k)
     ::df/ref (output-ref e k)
     ::df/coll (output-coll e k)
-    ::df/reverse-ref (output-reverse-ref e k)))
+    ::df/reverse-ref (output-reverse-ref e k)
+    nil))
 
 (defn- lookup-type
   [e k]
@@ -207,13 +210,15 @@
 
 (defn entity-lookup
   ([e k nf]
-   (let [attr-type (lookup-type e k)]
-     (or (output-member e k attr-type) nf)))
+   (if (= k :db/id)
+     (.-id e)
+     (let [attr-type (lookup-type e k)]
+       (or (output-member e k attr-type) nf))))
   ([e k]
    (entity-lookup e k nil)))
 
 (defn entity [facts id]
-  (Entity. facts id))
+  (Entity. facts id nil))
 
 (defn pull
   "Given a fact store, a pattern, and an entity ID,
