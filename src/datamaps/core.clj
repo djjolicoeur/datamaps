@@ -1,6 +1,8 @@
 (ns datamaps.core
   (:require [datamaps.query :as d]
-            [datamaps.facts :as df])
+            [datamaps.facts :as df]
+            [datascript.query :as dq]
+            [clojure.pprint :as pprint])
   (:import [datamaps.facts FactStore] ))
 
 
@@ -36,9 +38,16 @@
 
 (defn facts
   [m]
-  (let [facts (facts* m)]
-    (FactStore. (df/filter-meta facts) (set (df/filter-not-meta facts)))))
+  (df/raw-facts->fact-store (facts* m)))
 
+
+(defn id->entity
+  [facts id]
+  (q '[:find ?e .
+       :in $ ?id
+       :where
+       [?id _ _]]
+     facts id))
 
 (defn entity->datums
   "Find the datums related to this ID"
@@ -49,7 +58,7 @@
        [?id ?a ?v]]
      facts id))
 
-(declare entity)
+(declare entity entity-lookup)
 
 (defn datums->map
   "Given a set of facts, and entity ID, and a set of related datums,
@@ -67,14 +76,144 @@
                    (assoc out a v))))
         out))))
 
-(defn entity
+(defn- entity-keys
+  [e]
+  (->> (d/q '[:find [?a ...]
+              :in $ ?e
+              :where [?e ?a _]]
+            (.-facts e) (.-id e))
+       set))
+
+
+(defn- touch-entity
   "Given facts and an entity ID, output the map
    representation of the entity"
-  [facts id]
-  {:pre [(df/factstore? facts)]}
-  (->> id
-       (entity->datums facts)
-       (datums->map facts id)))
+  [e]
+  (let [e-keys (entity-keys e)]
+    (-> (reduce (fn [m k]
+                  (if-let [v (entity-lookup e k)] (assoc m k v) m))
+                {} e-keys)
+        (assoc :db/id (.-id e)))))
+
+(defprotocol IEntity
+  (touch [e]))
+
+(deftype Entity [facts id]
+  IEntity
+  (touch [e]
+    (touch-entity e))
+
+  Object
+  (toString [_] (if (id->entity facts id)
+                  (str {:db/id id})
+                  nil))
+  clojure.lang.Seqable
+  (seq [e]
+    (seq (touch e)))
+
+  clojure.lang.Associative
+  (equiv [e o]
+    (and (instance? Entity o) (= (.-id e) (.-id o))))
+  (containsKey [e k]
+    (not= ::nf (entity-lookup e k ::nf)))
+  (entryAt [e k]
+    (some->> (entity-lookup e k) (clojure.lang.MapEntry. k)))
+
+  (empty [e]         (throw (UnsupportedOperationException.)))
+  (assoc [e k v]     (throw (UnsupportedOperationException.)))
+  (cons  [e [k v]]   (throw (UnsupportedOperationException.)))
+  (count [e]         (count  (touch e)))
+
+  clojure.lang.ILookup
+  (valAt [e k]       (entity-lookup e k))
+  (valAt [e k not-found] (entity-lookup e k not-found))
+
+  clojure.lang.IFn
+  (invoke [e k]      (entity-lookup e k))
+  (invoke [e k not-found] (entity-lookup e k not-found)))
+
+(defmethod print-method Entity [e ^java.io.Writer w]
+  (.write w (str {:db/id (.-id e)})))
+
+(defmethod print-dup Entity [e w]
+  (print-method e w))
+
+
+(defn- use-method
+  [^clojure.lang.MultiFn multifn dispatch-val func]
+  (. multifn addMethod dispatch-val func))
+
+(use-method clojure.pprint/simple-dispatch Entity pr)
+
+(defn- output-val
+  [e k]
+  (d/q '[:find ?v .
+         :in $ ?e ?a
+         :where [?e ?a ?v]]
+       (.-facts e) (.-id e) k))
+
+(defn- output-ref
+  [e k]
+  (when-let [ref (d/q '[:find ?v .
+                        :in $ ?e ?a
+                        :where [?e ?a ?v]]
+                      (.-facts e) (.-id e) k)]
+    (Entity. (.-facts e) ref)))
+
+(defn- nested-ref
+  [e coll-member]
+  (d/q '[:find ?e .
+         :in $ ?e
+         :where [?e _ _]]
+       (.-facts e) coll-member))
+
+(defn- coll-member
+  [e member]
+  (if-let [nested-entity (nested-ref e member)]
+    (Entity. (.-facts e) member)
+    member))
+
+(defn- output-coll
+  [e k]
+  (let [coll (d/q '[:find [?v ...]
+                    :in $ ?e ?k
+                    :where [?e ?k ?v]]
+                  (.-facts e) (.-id e) k)]
+    (mapv (partial coll-member e) coll)))
+
+(defn- output-reverse-ref
+  [e k]
+  (when-let [ref (dq/q '[:find ?v .
+                         :in $ ?e ?k
+                         :where [?e ?k ?v]]
+                       (df/reverse-partition (.-facts e)) k)]
+    (Entity. (.-facts e) ref)))
+
+(defn- output-member
+  [e k t]
+  (condp = t
+    ::df/val (output-val e k)
+    ::df/ref (output-ref e k)
+    ::df/coll (output-coll e k)
+    ::df/reverse-ref (output-reverse-ref e k)))
+
+(defn- lookup-type
+  [e k]
+  (let [t (dq/q '[:find [?v ...]
+                  :in $ ?e ?a
+                  :where [?e ?a ?v]]
+                (df/attr-partition (.-facts e)) (.-id e) k)]
+    (if (some #{::df/coll} t) ::df/coll (first t))))
+
+(defn entity-lookup
+  ([e k nf]
+   (let [attr-type (lookup-type e k)]
+     (or (output-member e k attr-type) nf)))
+  ([e k]
+   (entity-lookup e k nil)))
+
+(defn entity [facts id]
+  (Entity. facts id))
 
 (defn pull
   "Given a fact store, a pattern, and an entity ID,
