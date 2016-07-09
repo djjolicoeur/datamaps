@@ -81,7 +81,7 @@
   (->> (d/q '[:find [?a ...]
               :in $ ?e
               :where [?e ?a _]]
-            (.-facts e) (.-id e))
+            @(.-facts e) (.-id e))
        set))
 
 
@@ -152,14 +152,14 @@
   (d/q '[:find ?v .
          :in $ ?e ?a
          :where [?e ?a ?v]]
-       (.-facts e) (.-id e) k))
+       @(.-facts e) (.-id e) k))
 
 (defn- output-ref
   [e k]
   (when-let [ref (d/q '[:find ?v .
                         :in $ ?e ?a
                         :where [?e ?a ?v]]
-                      (.-facts e) (.-id e) k)]
+                      @(.-facts e) (.-id e) k)]
     (Entity. (.-facts e) ref nil)))
 
 (defn- nested-ref
@@ -167,7 +167,7 @@
   (d/q '[:find ?e .
          :in $ ?e
          :where [?e _ _]]
-       (.-facts e) coll-member))
+       @(.-facts e) coll-member))
 
 (defn- coll-member
   [e member]
@@ -180,7 +180,7 @@
   (let [coll (d/q '[:find [?v ...]
                     :in $ ?e ?k
                     :where [?e ?k ?v]]
-                  (.-facts e) (.-id e) k)]
+                  @(.-facts e) (.-id e) k)]
     (mapv (partial coll-member e) coll)))
 
 (defn- output-reverse-ref
@@ -188,7 +188,7 @@
   (when-let [ref (dq/q '[:find ?v .
                          :in $ ?e ?k
                          :where [?e ?k ?v]]
-                       (df/reverse-partition (.-facts e)) (.-id e) k)]
+                       (df/reverse-partition @(.-facts e)) (.-id e) k)]
     (Entity. (.-facts e) ref nil)))
 
 (defn- output-member
@@ -205,7 +205,7 @@
   (let [t (dq/q '[:find [?v ...]
                   :in $ ?e ?a
                   :where [?e ?a ?v]]
-                (df/attr-partition (.-facts e)) (.-id e) k)]
+                (df/attr-partition @(.-facts e)) (.-id e) k)]
     (if (some #{::df/coll} t) ::df/coll (first t))))
 
 (defn entity-lookup
@@ -218,7 +218,7 @@
    (entity-lookup e k nil)))
 
 (defn entity [facts id]
-  (Entity. facts id nil))
+  (Entity. (atom facts) id nil))
 
 (defn pull
   "Given a fact store, a pattern, and an entity ID,
