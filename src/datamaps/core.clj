@@ -58,7 +58,14 @@
        [?id ?a ?v]]
      facts id))
 
-(declare entity entity-lookup)
+(declare entity entity-lookup resolve-coll resolve-ref)
+
+(defn- coll-ref?
+  [facts maybe-id]
+  (d/q '[:find ?e .
+         :in $ ?e
+         :where [?e _ _]] facts maybe-id))
+
 
 (defn datums->map
   "Given a set of facts, and entity ID, and a set of related datums,
@@ -71,8 +78,8 @@
         (let [type (df/attr-meta facts id a)]
           (recur (rest datums)
                  (condp = type
-                   df/coll-type (update-in out [a] conj (or (entity facts v) v))
-                   df/ref-type (assoc out a (entity facts v))
+                   df/coll-type (resolve-coll a out facts v)
+                   df/ref-type (resolve-ref a out facts v)
                    (assoc out a v))))
         out))))
 
@@ -96,10 +103,16 @@
         (assoc :db/id (.-id e)))))
 
 (defprotocol IEntity
+  (->map [e])
   (touch [e]))
 
 (deftype Entity [facts id touched]
   IEntity
+  (->map [e]
+    (let [fs @facts]
+      (->> id
+           (entity->datums fs)
+           (datums->map fs id))))
   (touch [e]
     (if touched e
         (Entity. facts id (touch-entity e))))
@@ -219,6 +232,16 @@
 
 (defn entity [facts id]
   (Entity. (atom facts) id nil))
+
+(defn resolve-coll
+  [attr out facts v]
+  (if (coll-ref? facts v)
+    (update-in out [attr] conj (->map (entity facts v)))
+    (update-in out [attr] conj v)))
+
+(defn resolve-ref
+  [attr out facts v]
+  (assoc out attr (->map (entity facts v))))
 
 (defn pull
   "Given a fact store, a pattern, and an entity ID,
