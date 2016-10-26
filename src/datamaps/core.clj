@@ -37,16 +37,17 @@
                     :type (type m)}))))
 
 (defn facts
+  "Convert a map or seq of maps into a factstore"
   [m]
   (df/raw-facts->fact-store (facts* m)))
 
 
 (defn id->entity
+  "Find entity for id, if id exists"
   [facts id]
   (q '[:find ?e .
        :in $ ?e
-       :where
-       [?e _ _]]
+       :where [?e _ _]]
      facts id))
 
 (defn entity->datums
@@ -59,12 +60,6 @@
      facts id))
 
 (declare entity entity-lookup resolve-coll resolve-ref)
-
-(defn- coll-ref?
-  [facts maybe-id]
-  (d/q '[:find ?e .
-         :in $ ?e
-         :where [?e _ _]] facts maybe-id))
 
 
 (defn datums->map
@@ -84,6 +79,7 @@
         out))))
 
 (defn- entity-keys
+  "find all attribute keys for a given entity"
   [e]
   (->> (d/q '[:find [?a ...]
               :in $ ?e
@@ -103,8 +99,10 @@
         (assoc :db/id (.-id e)))))
 
 (defprotocol IEntity
-  (->map [e])
-  (touch [e]))
+  (->map [e] "Reconstitute entity to it's origanl map")
+  (touch [e] "Analogous to datomic's datomic.api/touch"))
+
+;; Entity Impl
 
 (deftype Entity [facts id touched]
   IEntity
@@ -147,6 +145,8 @@
   (invoke [e k]      (entity-lookup e k))
   (invoke [e k not-found] (entity-lookup e k not-found)))
 
+;; Implement print methods
+
 (defmethod print-method Entity [e ^java.io.Writer w]
   (.write w (str e)))
 
@@ -160,7 +160,9 @@
 
 (use-method clojure.pprint/simple-dispatch Entity pr)
 
+
 (defn- output-val
+  "Find value given an entity and an attribute key"
   [e k]
   (d/q '[:find ?v .
          :in $ ?e ?a
@@ -168,6 +170,7 @@
        @(.-facts e) (.-id e) k))
 
 (defn- output-ref
+  "Ensure we convert ref values to entites referencing the same factstore"
   [e k]
   (when-let [ref (d/q '[:find ?v .
                         :in $ ?e ?a
@@ -176,6 +179,7 @@
     (Entity. (.-facts e) ref nil)))
 
 (defn- nested-ref
+  "Is a nested value a reference?"
   [e coll-member]
   (d/q '[:find ?e .
          :in $ ?e
@@ -183,12 +187,14 @@
        @(.-facts e) coll-member))
 
 (defn- coll-member
+  "Output an entity if collection member is a ref, otherwise the value"
   [e member]
   (if-let [nested-entity (nested-ref e member)]
     (Entity. (.-facts e) member nil)
     member))
 
 (defn- output-coll
+  "output entity collections"
   [e k]
   (let [coll (d/q '[:find [?v ...]
                     :in $ ?e ?k
@@ -197,6 +203,7 @@
     (mapv (partial coll-member e) coll)))
 
 (defn- output-reverse-ref
+  "lookup reverse refs in the reverse attr partition and convert to entity"
   [e k]
   (when-let [ref (dq/q '[:find ?v .
                          :in $ ?e ?k
@@ -205,6 +212,7 @@
     (Entity. (.-facts e) ref nil)))
 
 (defn- output-member
+  "handle each attribute type for entity"
   [e k t]
   (condp = t
     ::df/val (output-val e k)
@@ -214,6 +222,7 @@
     nil))
 
 (defn- lookup-type
+  "find type for attribute k and entity e"
   [e k]
   (let [t (dq/q '[:find [?v ...]
                   :in $ ?e ?a
@@ -222,6 +231,7 @@
     (if (some #{::df/coll} t) ::df/coll (first t))))
 
 (defn entity-lookup
+  "lookup entity e's attribute k"
   ([e k nf]
    (if (= k :db/id)
      (.-id e)
@@ -230,12 +240,14 @@
   ([e k]
    (entity-lookup e k nil)))
 
-(defn entity [facts id]
+(defn entity
+  "given a factstore and an id, out instance of IEntity"
+  [facts id]
   (Entity. (atom facts) id nil))
 
 (defn resolve-coll
   [attr out facts v]
-  (if (coll-ref? facts v)
+  (if (id->entity facts v)
     (update-in out [attr] conj (->map (entity facts v)))
     (update-in out [attr] conj v)))
 

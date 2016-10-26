@@ -31,6 +31,9 @@ query arbitrary maps.
    truncated by set semantics.  In a true DB, this is desired, but we are
    abstracting maps, and should maintain consistency with the original map.
  * Datascript is included as a dependency.
+ * Entity interface analogous to datomic and datascripts enabling the ability to
+   "walk" the map via cursor.
+ * Reverse reference implementation for entities.
 
 
 
@@ -201,7 +204,7 @@ build the results set.
 
 ## Isn't this like [Datascript](https://github.com/tonsky/datascript)?
 
-Kind of, but not really. Datascript allows you to create a true database in memory, wheras
+Kind of, but not really. Datascript allows you to create a true database in memory, whereas
 the goal of datamaps is to allow for the ad-hoc generation of fact lists from arbitrary maps to
 allow for easy querying of structured data. If you are looking for a way to store data for
 use later in program execution, Datascript is the way to go.  If you are only looking only to
@@ -261,17 +264,24 @@ datamaps is very much _not_ a database solution.
         [?l :neighborhood ?n]
         [?n :zip 21401]] facts) ;;=> ["Mike" "Katie"]
 
+```
 
-;; We keep some metadata about keywords so we can reconstitute
-;; entities as well
+## Entity Interface
 
+Entities are analogous to datomic entities and implement reverse
+references, and are instantiated in the same manner. Additionally,
+datamaps entites implement `->map`, which reconstitutes the map
+to it's original form from the facts
+
+```clojure
 (def dan-id (dm/q '[:find ?e .
                     :where [?e :firstname "Dan"]] facts))
 
 ;;=> #uuid "16a89d94-5451-4329-ac67-78d1ba39476f"
 
-(dm/entity facts dan-id)
-
+(->> dan-id
+     (dm/entity facts)
+     dm/->map)
 
 ;;=> {:cats ("islay" "lily" "zorro"),
 ;;=>  :dogs ("ginny"),
@@ -287,11 +297,28 @@ This is really handy if you want to filter and pull a sub-map from that data, fo
 if we want all neighborhoods with a 21224 zip code
 
 ```clojure
-(def canton-ids (dm/q '[:find [?n ...] :where [?n :zip 21224]] facts))
+(def canton-id (dm/q '[:find ?n . :where [?n :zip 21224]] facts))
 
-(map (partial dm/entity facts) canton-ids)
+(def dan-neighborhood (dm/entity facts canton-id))
 
-;;=> ({:name "Baltimore", :zip 21224})
+(dm/touch dan-neighborhood)
+
+;;=> {:name "Baltimore", :zip 21224, :db/id #uuid "e452a705-0d1f-43d2-a5b1-7a1a39be1f7a"}
+
+
+;; walk the reverse refs back to the top level
+
+(def dan (:_location (:_neighborhood dan-neighborhood)))
+
+(d/touch dan)
+
+;;=> {:lastname "Joli",
+;;=>  :cats ["islay" "zorro" "lily"],
+;;=>  :dogs ["ginny"],
+;;=>  :firstname "Dan",
+;;=>  :location {:db/id #uuid "375fcb5e-5f4c-4c43-a570-c006a06475df"},
+;;=>  :db/id #uuid "64e4ab3f-1040-4c3f-bb8c-80f16849b48a"}
+
 ```
 
 We can also use Datomic's aggregation functions to easily run aggregations over
