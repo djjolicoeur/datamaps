@@ -71,6 +71,15 @@
     (->FactStore facts meta reverse)))
 
 
+;; ID Generation
+
+(defprotocol IGenId
+  (take-id [_] "Atomic, unique ID"))
+
+(defrecord GenId [atomic-counter]
+  IGenId
+  (take-id [_] (swap! atomic-counter inc)))
+
 ;; Functions for converting maps to fact tuples
 
 (declare map->facts)
@@ -79,24 +88,24 @@
 (defn- coll->facts
   "Handles converting collections to facts, including collections
    of maps"
-  [id k coll]
+  [id-gen id k coll]
   (->> (map (fn [v] [k v]) coll)
-       (map (partial map-entry->fact true id))
+       (map (partial map-entry->fact id-gen true id))
        (reduce concat)
        (cons [id k coll-type])))
 
 (defn- map-entry->fact
   "Generate a fact given an id and [key value] tuple.
    the tuple may contain nested structures"
-  ([is-child? id [k v]]
-   (cond (map? v) (map->facts id k v)
-         (sequential? v) (coll->facts id k v)
-         (set? v) (coll->facts id k v)
+  ([id-gen is-child? id [k v]]
+   (cond (map? v) (map->facts id-gen id k v)
+         (sequential? v) (coll->facts id-gen id k v)
+         (set? v) (coll->facts id-gen id k v)
          is-child? [[id k v]]
          v [[id k v] [id k val-type]]
          true nil))
-  ([id [k v]]
-   (map-entry->fact nil id [k v])))
+  ([id-gen id [k v]]
+   (map-entry->fact id-gen nil id [k v])))
 
 (defn reverse-index-kw [k]
   (keyword (namespace k) (str "_" (name k))))
@@ -108,17 +117,18 @@
    [<parents generated id> <key> <generated id of child>], including
    maps nested within a collections. Collections will imply a many
    relation"
-  ([m]
-   (let [id (java.util.UUID/randomUUID)]
+  ([m] (map->facts (->GenId (atom 0)) m))
+  ([id-gen m]
+   (let [id (take-id id-gen)]
      (->> (seq m)
-          (map (partial map-entry->fact id))
+          (map (partial map-entry->fact id-gen id))
           (filter identity)
           (reduce concat))))
-  ([parent key m]
-   (let [id (java.util.UUID/randomUUID)
+  ([id-gen parent key m]
+   (let [id (take-id id-gen)
          reverse-key (reverse-index-kw key)]
      (->> (seq m)
-          (mapcat (partial map-entry->fact id))
+          (mapcat (partial map-entry->fact id-gen id))
           (filter identity)
           (cons [parent key id])
           (cons [id reverse-key parent])
@@ -130,7 +140,8 @@
   "Application of map->facts to a sequence of maps to
    create a set of facts"
   [ms]
-  (mapcat map->facts ms))
+  (let [id-gen (->GenId (atom 0))]
+    (mapcat (partial map->facts id-gen) ms)))
 
 ;; Functions for retrieving entities by their generated ID
 
