@@ -41,7 +41,6 @@
   [m]
   (df/raw-facts->fact-store (facts* m)))
 
-
 (defn id->entity
   "Find entity for id, if id exists"
   [facts id]
@@ -60,7 +59,6 @@
      facts id))
 
 (declare entity entity-lookup resolve-coll resolve-ref)
-
 
 (defn datums->map
   "Given a set of facts, and entity ID, and a set of related datums,
