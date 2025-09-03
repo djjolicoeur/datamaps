@@ -1,10 +1,40 @@
 (ns datamaps.pull
   (:require [datamaps.facts :as df]
-            [datascript.query :as dq]
-            [datascript.pull-parser :as dpp]))
+            [datascript.query :as dq]))
 
 ;; Datascript's pull API adpated for use with arbitrary maps
 ;; implemeting the IFactStore protocol
+
+(defn parse-selector
+  "Parse a pull selector into internal pattern representation.
+   Supports a minimal subset of Datascript pull syntax used by
+   this project: keywords, nested maps and the wildcard `*`.
+   Returns a map with `:wildcard?` flag and an `:attrs` map of
+   attribute -> options, where options may include `:subpattern`.
+   Other advanced pull features (limits, defaults, recursion
+   depth, etc.) are not currently supported."
+  [selector]
+  (letfn [(parse [sel]
+            (reduce (fn [pattern element]
+                      (cond
+                        (= element '*')
+                        (assoc pattern :wildcard? true)
+
+                        (keyword? element)
+                        (assoc-in pattern [:attrs element] {:attr element})
+
+                        (map? element)
+                        (reduce (fn [p [k v]]
+                                  (assoc-in p [:attrs k]
+                                            {:attr k :subpattern (parse v)}))
+                                pattern
+                                element)
+
+                        :else
+                        (throw (ex-info (str "Unsupported pull selector element: " element)
+                                        {:element element}))))
+                    {:wildcard? false :attrs {}} sel))]
+    (parse selector)))
 
 (defn eid-datoms [facts eid]
   (dq/q '[:find ?e ?a ?v
@@ -273,10 +303,11 @@
   [facts pattern eids multi?]
   (pull-pattern facts (list (initial-frame pattern eids multi?))))
 
+
 (defn pull [facts selector eid]
   {:pre [(df/factstore? facts)]}
-  (pull-spec facts (dpp/parse-pull selector) [eid] false))
+  (pull-spec facts (parse-selector selector) [eid] false))
 
 (defn pull-many [facts selector eids]
   {:pre [(df/factstore? facts)]}
-    (pull-spec facts (dpp/parse-pull selector) eids true))
+  (pull-spec facts (parse-selector selector) eids true))

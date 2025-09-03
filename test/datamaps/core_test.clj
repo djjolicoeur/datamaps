@@ -2,6 +2,7 @@
   (:require [clojure.test :refer :all]
             [datamaps.core :refer :all]
             [datamaps.facts :as df]
+            [datamaps.pull :as dpull]
             [datomic.api :as datomic]))
 
 
@@ -180,6 +181,14 @@
           pulled (pull tfacts '[* {:location [:city]}] dan-id)]
       (is (= 1 (count (:location pulled))))
       (is (= "Annapolis" (get-in pulled [:location :city]))))))
+
+(deftest parse-selector-basic []
+  (testing "Parse selector handles wildcard and subpattern"
+    (is (= {:wildcard? true
+            :attrs {:location {:attr :location
+                                :subpattern {:wildcard? false
+                                             :attrs {:city {:attr :city}}}}}}
+           (dpull/parse-selector '[* {:location [:city]}])))))
 
 
 (def schema

@@ -1,7 +1,6 @@
 (ns datamaps.query
   (:require [datascript.query :as dq]
             [datascript.parser :as dp]
-            [datascript.pull-parser :as dpp]
             [datascript.lru :as lru]
             [datamaps.facts :as df]
             [datamaps.pull :as dpa])
@@ -44,7 +43,7 @@
   (let [resolved (for [find find-elements]
                    (when (dp/pull? find)
                      [(resolve-pull-source (:source find) context)
-                      (dpp/parse-pull
+                      (dpa/parse-selector
                        (-context-resolve (:pattern find) context))]))]
     (for [tuple resultset]
       (mapv (fn [env el]
