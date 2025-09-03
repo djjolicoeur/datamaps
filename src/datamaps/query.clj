@@ -18,6 +18,14 @@
     (when-let [tuple (first (:tuples rel))]
       (get tuple ((:attrs rel) sym)))))
 
+(defn built-in-aggregates
+  "Return Datascript's map of built-in aggregates, accounting for
+  API changes across Datascript versions."
+  []
+  (or (some-> (ns-resolve 'datascript.query 'built-in-aggregates) var-get)
+      (some-> (ns-resolve 'datascript.query 'default-aggregates) var-get)
+      {}))
+
 
 (defprotocol IContextResolve
   (-context-resolve [var context]))
@@ -31,7 +39,7 @@
     (get-in context [:sources (.-symbol var)]))
   PlainSymbol
   (-context-resolve [var _]
-    (get dq/built-in-aggregates (.-symbol var)))
+    (get (built-in-aggregates) (.-symbol var)))
   Constant
   (-context-resolve [var _]
         (.-value var)))
