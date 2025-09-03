@@ -1,8 +1,7 @@
 (ns datamaps.pull
   (:require [datamaps.facts :as df]
             [datascript.query :as dq]
-            [datascript.pull-parser :as dpp])
-  (:import [datascript.pull_parser PullSpec]))
+            [datascript.pull-parser :as dpp]))
 
 ;; Datascript's pull API adpated for use with arbitrary maps
 ;; implemeting the IFactStore protocol
@@ -116,7 +115,7 @@
               :recursion recursion
               :results (transient [])})))))
 
-(let [pattern (PullSpec. true {})]
+(let [pattern (dpp/->PullSpec true {})]
   (defn- expand-frame
     [parent eid attr-key multi? eids]
     (let [rec (push-recursion (:recursion parent) attr-key eid)]
