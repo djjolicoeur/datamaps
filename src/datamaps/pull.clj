@@ -115,13 +115,13 @@
               :recursion recursion
               :results (transient [])})))))
 
-(let [pattern (dpp/->PullSpec true {})]
+(let [pattern {:wildcard? true :attrs {}}]
   (defn- expand-frame
     [parent eid attr-key multi? eids]
     (let [rec (push-recursion (:recursion parent) attr-key eid)]
       (-> pattern
           (subpattern-frame eids multi? attr-key)
-          (assoc :recursion rec)))))
+           (assoc :recursion rec)))))
 
 
 (defn- pull-attr-datoms
