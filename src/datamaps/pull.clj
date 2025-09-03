@@ -161,8 +161,8 @@
            (conj frames)))))
 
 (defn- pull-attr
-  [facts spec eid frames]
-  (let [[attr-key opts] spec]
+  [facts pattern eid frames]
+  (let [[attr-key opts] pattern]
     (let [attr     (:attr opts)
           forward? (= attr-key attr)
           results  (if forward?
@@ -243,10 +243,10 @@
                             :wildcard? false)
                      frames)
       (if-let [specs (seq (:specs frame))]
-        (let [spec       (first specs)
+        (let [pattern-spec (first specs)
               pattern    (:pattern frame)
               new-frames (conj frames (assoc frame :specs (rest specs)))]
-          (pull-attr facts spec (first eids) new-frames))
+          (pull-attr facts pattern-spec (first eids) new-frames))
         (->> frame :kvps persistent! not-empty
              (reset-frame frame (rest eids))
              (conj frames)

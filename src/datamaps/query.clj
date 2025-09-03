@@ -49,8 +49,8 @@
     (for [tuple resultset]
       (mapv (fn [env el]
               (if env
-                (let [[src spec] env]
-                  (dpa/pull-spec src spec [el] false))
+                (let [[src pattern] env]
+                  (dpa/pull-spec src pattern [el] false))
                 el))
             resolved
             tuple))))
