@@ -79,6 +79,18 @@
     (let [facts (facts test-users)]
       (is (= #{"Mike" "Katie"} (set (west-annapolitans facts)))))))
 
+(deftest find-tuple []
+  (testing "Query returning a tuple yields a vector"
+    (let [facts (facts test-users)
+          tuple (q '[:find [?f ?c]
+                     :where
+                     [?e :firstname ?f]
+                     [?e :location ?l]
+                     [?l :city ?c]
+                     [?e :firstname "Dan"]]
+                   facts)]
+      (is (= ["Dan" "Annapolis"] tuple)))))
+
 
 (def key-collisions
   {:foo {:bar [{:foo [1 2 3]}] :baz {:bar 5}}})

@@ -99,6 +99,16 @@
       (vswap! query-cache assoc q qp)
       qp)))
 
+(defn post-process
+  "Minimal replacement for Datascript's internal post-processing.
+   Converts the raw query `results` into the shape expected by `find`."
+  [find results]
+  (cond
+    (instance? FindRel find) results
+    (instance? FindTuple find) (first results)
+    (instance? FindColl find) (mapv first results)
+    (instance? FindScalar find) (ffirst results)))
+
 
 (defn q
   "Override datascript's query fn to avoid casting results
@@ -129,4 +139,4 @@
       (dq/aggregate find-elements context)
       (some dp/pull? find-elements)
       (pull find-elements context)
-      true (dq/-post-process find))))
+      true (post-process find))))
