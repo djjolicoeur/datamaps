@@ -6,7 +6,7 @@
             [datamaps.pull :as dpa])
   (:import [datascript.parser BindColl BindIgnore BindScalar BindTuple
             Constant FindColl FindRel FindScalar FindTuple PlainSymbol
-            RulesVar SrcVar Variable Pull]))
+            Query RulesVar SrcVar Variable Pull]))
 
 (def ^:private lru-cache-size 100)
 
@@ -119,15 +119,16 @@
    cardinality not withstanding."
   [query & inputs]
   (let [parsed-q     (memoize-parse-query query)
-        find         (:find parsed-q)
+        find         (.-find ^Query parsed-q)
         find-elements (dp/find-elements find)
         find-vars    (map (fn [^Variable v] (.-symbol v)) (dp/find-vars find))
         result-arity (count find-elements)
-        with         (:with parsed-q)
+        with         (.-with ^Query parsed-q)
         all-vars     (concat find-vars (map (fn [^Variable v] (.-symbol v)) with))
-        wheres       (:where parsed-q)
+        wheres       (.-where ^Query parsed-q)
+        in-bindings  (.-in ^Query parsed-q)
         context      (-> (datascript.query.Context. [] {} {})
-                         (resolve-ins (:in parsed-q) inputs))
+                         (resolve-ins in-bindings inputs))
         results      (-> context
                          (dq/-q wheres)
                          (collect all-vars))]
