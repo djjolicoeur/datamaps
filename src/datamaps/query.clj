@@ -119,7 +119,7 @@
    cardinality not withstanding."
   [query & inputs]
   (let [parsed-q     (memoize-parse-query query)
-        find         (:find ^Query parsed-q)
+        find         (or (:find parsed-q) (:return parsed-q))
         find-elements (dp/find-elements find)
         find-vars    (map (fn [^Variable v] (.-symbol v)) (dp/find-vars find))
         result-arity (count find-elements)
