@@ -6,7 +6,7 @@
             [datamaps.pull :as dpa])
   (:import [datascript.parser BindColl BindIgnore BindScalar BindTuple
             Constant FindColl FindRel FindScalar FindTuple PlainSymbol
-                                RulesVar SrcVar Variable]))
+            RulesVar SrcVar Variable Pull Query]))
 
 (def ^:private lru-cache-size 100)
 
@@ -50,9 +50,9 @@
 (defn pull [find-elements context resultset]
   (let [resolved (for [find find-elements]
                    (when (dp/pull? find)
-                     [(resolve-pull-source (:source find) context)
+                     [(resolve-pull-source (.-source ^Pull find) context)
                       (dpa/parse-selector
-                       (-context-resolve (:pattern find) context))]))]
+                       (-context-resolve (.-pattern ^Pull find) context))]))]
     (for [tuple resultset]
       (mapv (fn [env el]
               (if env
@@ -65,18 +65,19 @@
 
 
 (defn resolve-in [context [binding value]]
-  (cond
-    (and (instance? BindScalar binding)
-         (instance? SrcVar (:variable binding)))
-    (-> context
-        (update-in [:sources]
-                   assoc (get-in binding [:variable :symbol]) (df/fact-partition value))
-        (update-in [:pull-sources] assoc (get-in binding [:variable :symbol]) value))
-    (and (instance? BindScalar binding)
-         (instance? RulesVar (:variable binding)))
-    (assoc context :rules (dq/parse-rules value))
-    :else
-    (update-in context [:rels] conj (dq/in->rel binding value))))
+  (let [var (when (instance? BindScalar binding)
+              (.-variable ^BindScalar binding))
+        sym (when var (.-symbol ^Variable var))]
+    (cond
+      (and var (instance? SrcVar var))
+      (-> context
+          (update-in [:sources]
+                     assoc sym (df/fact-partition value))
+          (update-in [:pull-sources] assoc sym value))
+      (and var (instance? RulesVar var))
+      (assoc context :rules (dq/parse-rules value))
+      :else
+      (update-in context [:rels] conj (dq/in->rel binding value)))))
 
 (defn resolve-ins [context bindings values]
     (reduce resolve-in context (zipmap bindings values)))
@@ -117,16 +118,16 @@
    maps back from the collection of facts as they were passed in,
    cardinality not withstanding."
   [query & inputs]
-  (let [parsed-q     (memoize-parse-query query)
-        find         (:find parsed-q)
+  (let [^Query parsed-q (memoize-parse-query query)
+        find         (.-find parsed-q)
         find-elements (dp/find-elements find)
-        find-vars    (dp/find-vars find)
+        find-vars    (map (fn [^Variable v] (.-symbol v)) (dp/find-vars find))
         result-arity (count find-elements)
-        with         (:with parsed-q)
-        all-vars     (concat find-vars (map :symbol with))
-        wheres       (:where parsed-q)
+        with         (.-with parsed-q)
+        all-vars     (concat find-vars (map (fn [^Variable v] (.-symbol v)) with))
+        wheres       (.-where parsed-q)
         context      (-> (datascript.query.Context. [] {} {})
-                         (resolve-ins (:in parsed-q) inputs))
+                         (resolve-ins (.-in parsed-q) inputs))
         results      (-> context
                          (dq/-q wheres)
                          (collect all-vars))]
