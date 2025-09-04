@@ -117,22 +117,21 @@
    maps back from the collection of facts as they were passed in,
    cardinality not withstanding."
   [query & inputs]
-  (let [query-map     (if (sequential? query) (dp/query->map query) query)
-        parsed-q      (memoize-parse-query query-map)
-        find          (:find parsed-q)
+  (let [parsed-q     (memoize-parse-query query)
+        find         (:find parsed-q)
         find-elements (dp/find-elements find)
-        find-vars     (dp/find-vars find)
-        result-arity  (count find-elements)
-        with          (:with parsed-q)
-        all-vars      (concat find-vars (map :symbol with))
-        wheres        (:where query-map)
-        context       (-> (datascript.query.Context. [] {} {})
-                          (resolve-ins (:in parsed-q) inputs))
-        results       (-> context
-                          (dq/-q wheres)
-                          (collect all-vars))]
+        find-vars    (dp/find-vars find)
+        result-arity (count find-elements)
+        with         (:with parsed-q)
+        all-vars     (concat find-vars (map :symbol with))
+        wheres       (:where parsed-q)
+        context      (-> (datascript.query.Context. [] {} {})
+                         (resolve-ins (:in parsed-q) inputs))
+        results      (-> context
+                         (dq/-q wheres)
+                         (collect all-vars))]
     (cond->> results
-      (:with query-map)
+      with
       (mapv #(vec (subvec % 0 result-arity)))
       (some dp/aggregate? find-elements)
       (dq/aggregate find-elements context)
