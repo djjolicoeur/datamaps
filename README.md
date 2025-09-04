@@ -3,6 +3,8 @@
 A Clojure library designed to leverage datalog queries to
 query arbitrary maps.
 
+This version targets Clojure 1.11 and Datascript 1.6.
+
 ## Build Status and Dependency Information
 
 [![Circle CI](https://circleci.com/gh/djjolicoeur/datamaps.svg?style=shield)](https://circleci.com/gh/djjolicoeur/datamaps)
