@@ -17,12 +17,15 @@
   (letfn [(parse [sel]
             (reduce (fn [pattern element]
                       (cond
-                        (= element '*')
+                        ;; wildcard selector
+                        (and (symbol? element) (= "*" (name element)))
                         (assoc pattern :wildcard? true)
 
+                        ;; simple attribute keyword
                         (keyword? element)
                         (assoc-in pattern [:attrs element] {:attr element})
 
+                        ;; nested map form
                         (map? element)
                         (reduce (fn [p [k v]]
                                   (assoc-in p [:attrs k]
@@ -30,11 +33,12 @@
                                 pattern
                                 element)
 
+                        ;; unsupported form
                         :else
                         (throw (ex-info (str "Unsupported pull selector element: " element)
                                         {:element element}))))
                     {:wildcard? false :attrs {}} sel))]
-    (parse selector)))
+      (parse selector)))
 
 (defn eid-datoms [facts eid]
   (dq/q '[:find ?e ?a ?v
