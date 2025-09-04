@@ -6,7 +6,7 @@
             [datamaps.pull :as dpa])
   (:import [datascript.parser BindColl BindIgnore BindScalar BindTuple
             Constant FindColl FindRel FindScalar FindTuple PlainSymbol
-            RulesVar SrcVar Variable Pull Query]))
+            RulesVar SrcVar Variable Pull]))
 
 (def ^:private lru-cache-size 100)
 
@@ -118,16 +118,16 @@
    maps back from the collection of facts as they were passed in,
    cardinality not withstanding."
   [query & inputs]
-  (let [^Query parsed-q (memoize-parse-query query)
-        find         (.-find parsed-q)
+  (let [parsed-q     (memoize-parse-query query)
+        find         (:find parsed-q)
         find-elements (dp/find-elements find)
         find-vars    (map (fn [^Variable v] (.-symbol v)) (dp/find-vars find))
         result-arity (count find-elements)
-        with         (.-with parsed-q)
+        with         (:with parsed-q)
         all-vars     (concat find-vars (map (fn [^Variable v] (.-symbol v)) with))
-        wheres       (.-where parsed-q)
+        wheres       (:where parsed-q)
         context      (-> (datascript.query.Context. [] {} {})
-                         (resolve-ins (.-in parsed-q) inputs))
+                         (resolve-ins (:in parsed-q) inputs))
         results      (-> context
                          (dq/-q wheres)
                          (collect all-vars))]
