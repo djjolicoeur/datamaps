@@ -119,14 +119,14 @@
    cardinality not withstanding."
   [query & inputs]
   (let [parsed-q     (memoize-parse-query query)
-        find         (.-find ^Query parsed-q)
+        find         (:find ^Query parsed-q)
         find-elements (dp/find-elements find)
         find-vars    (map (fn [^Variable v] (.-symbol v)) (dp/find-vars find))
         result-arity (count find-elements)
-        with         (.-with ^Query parsed-q)
+        with         (:with ^Query parsed-q)
         all-vars     (concat find-vars (map (fn [^Variable v] (.-symbol v)) with))
-        wheres       (.-where ^Query parsed-q)
-        in-bindings  (.-in ^Query parsed-q)
+        wheres       (:where ^Query parsed-q)
+        in-bindings  (:in ^Query parsed-q)
         context      (-> (datascript.query.Context. [] {} {})
                          (resolve-ins in-bindings inputs))
         results      (-> context
