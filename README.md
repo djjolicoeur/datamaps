@@ -28,7 +28,9 @@ This version targets Clojure 1.11 and Datascript 1.6.
 
 ### NEW!
 
- * Custom Pull API adapted from datscripts pull-api
+ * Custom Pull API adapted from datascript's pull API
+ * Lightweight pull-selector parser removes dependency on Datascript's internal
+   parser and supports keywords, nested maps, and `*`
  * Collections maintain all original elements rather than being
    truncated by set semantics.  In a true DB, this is desired, but we are
    abstracting maps, and should maintain consistency with the original map.
