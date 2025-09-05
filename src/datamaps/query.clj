@@ -119,18 +119,18 @@
    cardinality not withstanding."
   [query & inputs]
   (let [parsed-q     (memoize-parse-query query)
-        ;; Datascript 1.5 switched from :find to :return; fall back to the
-        ;; entire parsed query if neither key is present so the parser
-        ;; protocol implementations can still derive the information.
-        find         (or (:return parsed-q) (:find parsed-q))
+        qrec         ^Query parsed-q
+        ;; Datascript ≥1.5 renamed :find to :return.  Access the fields
+        ;; directly to avoid nil lookups when keywords change.
+        find         (or (.-return qrec) (.-find qrec))
         target       (or find parsed-q)
         find-elements (dp/find-elements target)
         find-vars    (map (fn [^Variable v] (.-symbol v)) (dp/find-vars target))
         result-arity (count find-elements)
-        with         (:with ^Query parsed-q)
+        with         (.-with qrec)
         all-vars     (concat find-vars (map (fn [^Variable v] (.-symbol v)) with))
-        wheres       (:where ^Query parsed-q)
-        in-bindings  (:in ^Query parsed-q)
+        wheres       (.-where qrec)
+        in-bindings  (.-in qrec)
         context      (-> (datascript.query.Context. [] {} {})
                          (resolve-ins in-bindings inputs))
         results      (-> context
