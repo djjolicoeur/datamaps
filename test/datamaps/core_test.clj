@@ -2,6 +2,7 @@
   (:require [clojure.test :refer :all]
             [datamaps.core :refer :all]
             [datamaps.facts :as df]
+            [datamaps.pull :as dpull]
             [datomic.api :as datomic]))
 
 
@@ -77,6 +78,18 @@
   (testing "Test generated facts are queryable"
     (let [facts (facts test-users)]
       (is (= #{"Mike" "Katie"} (set (west-annapolitans facts)))))))
+
+(deftest find-tuple []
+  (testing "Query returning a tuple yields a vector"
+    (let [facts (facts test-users)
+          tuple (q '[:find [?f ?c]
+                     :where
+                     [?e :firstname ?f]
+                     [?e :location ?l]
+                     [?l :city ?c]
+                     [?e :firstname "Dan"]]
+                   facts)]
+      (is (= ["Dan" "Annapolis"] tuple)))))
 
 
 (def key-collisions
@@ -180,6 +193,14 @@
           pulled (pull tfacts '[* {:location [:city]}] dan-id)]
       (is (= 1 (count (:location pulled))))
       (is (= "Annapolis" (get-in pulled [:location :city]))))))
+
+(deftest parse-selector-basic []
+  (testing "Parse selector handles wildcard and subpattern"
+    (is (= {:wildcard? true
+            :attrs {:location {:attr :location
+                                :subpattern {:wildcard? false
+                                             :attrs {:city {:attr :city}}}}}}
+           (dpull/parse-selector '[* {:location [:city]}])))))
 
 
 (def schema

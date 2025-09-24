@@ -1,11 +1,44 @@
 (ns datamaps.pull
   (:require [datamaps.facts :as df]
-            [datascript.query :as dq]
-            [datascript.pull-parser :as dpp])
-  (:import [datascript.pull_parser PullSpec]))
+            [datascript.query :as dq]))
 
 ;; Datascript's pull API adpated for use with arbitrary maps
 ;; implemeting the IFactStore protocol
+
+(defn parse-selector
+  "Parse a pull selector into internal pattern representation.
+   Supports a minimal subset of Datascript pull syntax used by
+   this project: keywords, nested maps and the wildcard `*`.
+   Returns a map with `:wildcard?` flag and an `:attrs` map of
+   attribute -> options, where options may include `:subpattern`.
+   Other advanced pull features (limits, defaults, recursion
+   depth, etc.) are not currently supported."
+  [selector]
+  (letfn [(parse [sel]
+            (reduce (fn [pattern element]
+                      (cond
+                        ;; wildcard selector
+                        (and (symbol? element) (= "*" (name element)))
+                        (assoc pattern :wildcard? true)
+
+                        ;; simple attribute keyword
+                        (keyword? element)
+                        (assoc-in pattern [:attrs element] {:attr element})
+
+                        ;; nested map form
+                        (map? element)
+                        (reduce (fn [p [k v]]
+                                  (assoc-in p [:attrs k]
+                                            {:attr k :subpattern (parse v)}))
+                                pattern
+                                element)
+
+                        ;; unsupported form
+                        :else
+                        (throw (ex-info (str "Unsupported pull selector element: " element)
+                                        {:element element}))))
+                    {:wildcard? false :attrs {}} sel))]
+      (parse selector)))
 
 (defn eid-datoms [facts eid]
   (dq/q '[:find ?e ?a ?v
@@ -116,13 +149,13 @@
               :recursion recursion
               :results (transient [])})))))
 
-(let [pattern (PullSpec. true {})]
+(let [pattern {:wildcard? true :attrs {}}]
   (defn- expand-frame
     [parent eid attr-key multi? eids]
     (let [rec (push-recursion (:recursion parent) attr-key eid)]
       (-> pattern
           (subpattern-frame eids multi? attr-key)
-          (assoc :recursion rec)))))
+           (assoc :recursion rec)))))
 
 
 (defn- pull-attr-datoms
@@ -161,8 +194,8 @@
            (conj frames)))))
 
 (defn- pull-attr
-  [facts spec eid frames]
-  (let [[attr-key opts] spec]
+  [facts pattern eid frames]
+  (let [[attr-key opts] pattern]
     (let [attr     (:attr opts)
           forward? (= attr-key attr)
           results  (if forward?
@@ -243,10 +276,10 @@
                             :wildcard? false)
                      frames)
       (if-let [specs (seq (:specs frame))]
-        (let [spec       (first specs)
+        (let [pattern-spec (first specs)
               pattern    (:pattern frame)
               new-frames (conj frames (assoc frame :specs (rest specs)))]
-          (pull-attr facts spec (first eids) new-frames))
+          (pull-attr facts pattern-spec (first eids) new-frames))
         (->> frame :kvps persistent! not-empty
              (reset-frame frame (rest eids))
              (conj frames)
@@ -274,10 +307,11 @@
   [facts pattern eids multi?]
   (pull-pattern facts (list (initial-frame pattern eids multi?))))
 
+
 (defn pull [facts selector eid]
   {:pre [(df/factstore? facts)]}
-  (pull-spec facts (dpp/parse-pull selector) [eid] false))
+  (pull-spec facts (parse-selector selector) [eid] false))
 
 (defn pull-many [facts selector eids]
   {:pre [(df/factstore? facts)]}
-    (pull-spec facts (dpp/parse-pull selector) eids true))
+  (pull-spec facts (parse-selector selector) eids true))

@@ -1,13 +1,12 @@
 (ns datamaps.query
   (:require [datascript.query :as dq]
             [datascript.parser :as dp]
-            [datascript.pull-parser :as dpp]
             [datascript.lru :as lru]
             [datamaps.facts :as df]
             [datamaps.pull :as dpa])
   (:import [datascript.parser BindColl BindIgnore BindScalar BindTuple
             Constant FindColl FindRel FindScalar FindTuple PlainSymbol
-                                RulesVar SrcVar Variable]))
+            Query RulesVar SrcVar Variable Pull]))
 
 (def ^:private lru-cache-size 100)
 
@@ -18,6 +17,14 @@
   (when-let [rel (rel-with-attr context sym)]
     (when-let [tuple (first (:tuples rel))]
       (get tuple ((:attrs rel) sym)))))
+
+(defn built-in-aggregates
+  "Return Datascript's map of built-in aggregates, accounting for
+  API changes across Datascript versions."
+  []
+  (or (some-> (ns-resolve 'datascript.query 'built-in-aggregates) var-get)
+      (some-> (ns-resolve 'datascript.query 'default-aggregates) var-get)
+      {}))
 
 
 (defprotocol IContextResolve
@@ -32,7 +39,7 @@
     (get-in context [:sources (.-symbol var)]))
   PlainSymbol
   (-context-resolve [var _]
-    (get dq/built-in-aggregates (.-symbol var)))
+    (get (built-in-aggregates) (.-symbol var)))
   Constant
   (-context-resolve [var _]
         (.-value var)))
@@ -43,14 +50,14 @@
 (defn pull [find-elements context resultset]
   (let [resolved (for [find find-elements]
                    (when (dp/pull? find)
-                     [(resolve-pull-source (:source find) context)
-                      (dpp/parse-pull
-                       (-context-resolve (:pattern find) context))]))]
+                     [(resolve-pull-source (.-source ^Pull find) context)
+                      (dpa/parse-selector
+                       (-context-resolve (.-pattern ^Pull find) context))]))]
     (for [tuple resultset]
       (mapv (fn [env el]
               (if env
-                (let [[src spec] env]
-                  (dpa/pull-spec src spec [el] false))
+                (let [[src pattern] env]
+                  (dpa/pull-spec src pattern [el] false))
                 el))
             resolved
             tuple))))
@@ -58,18 +65,19 @@
 
 
 (defn resolve-in [context [binding value]]
-  (cond
-    (and (instance? BindScalar binding)
-         (instance? SrcVar (:variable binding)))
-    (-> context
-        (update-in [:sources]
-                   assoc (get-in binding [:variable :symbol]) (df/fact-partition value))
-        (update-in [:pull-sources] assoc (get-in binding [:variable :symbol]) value))
-    (and (instance? BindScalar binding)
-         (instance? RulesVar (:variable binding)))
-    (assoc context :rules (dq/parse-rules value))
-    :else
-    (update-in context [:rels] conj (dq/in->rel binding value))))
+  (let [var (when (instance? BindScalar binding)
+              (.-variable ^BindScalar binding))
+        sym (when var (.-symbol ^Variable var))]
+    (cond
+      (and var (instance? SrcVar var))
+      (-> context
+          (update-in [:sources]
+                     assoc sym (df/fact-partition value))
+          (update-in [:pull-sources] assoc sym value))
+      (and var (instance? RulesVar var))
+      (assoc context :rules (dq/parse-rules value))
+      :else
+      (update-in context [:rels] conj (dq/in->rel binding value)))))
 
 (defn resolve-ins [context bindings values]
     (reduce resolve-in context (zipmap bindings values)))
@@ -92,6 +100,16 @@
       (vswap! query-cache assoc q qp)
       qp)))
 
+(defn post-process
+  "Minimal replacement for Datascript's internal post-processing.
+   Converts the raw query `results` into the shape expected by `find`."
+  [find results]
+  (cond
+    (instance? FindRel find) results
+    (instance? FindTuple find) (first results)
+    (instance? FindColl find) (mapv first results)
+    (instance? FindScalar find) (ffirst results)))
+
 
 (defn q
   "Override datascript's query fn to avoid casting results
@@ -99,27 +117,30 @@
    collections contained within our maps as well as get our
    maps back from the collection of facts as they were passed in,
    cardinality not withstanding."
-  [q & inputs]
-  (let [parsed-q      (memoize-parse-query q)
-        find          (:find parsed-q)
-        find-elements (dp/find-elements find)
-        find-vars     (dp/find-vars find)
-        result-arity  (count find-elements)
-        with          (:with parsed-q)
-        all-vars      (concat find-vars (map :symbol with))
-        q             (cond-> q
-                        (sequential? q) dp/query->map)
-        wheres        (:where q)
-        context       (-> (datascript.query.Context. [] {} {})
-                          (resolve-ins (:in parsed-q) inputs))
-        results       (-> context
-                          (dq/-q wheres)
-                          (collect all-vars))]
+  [query & inputs]
+  (let [parsed-q     (memoize-parse-query query)
+        qrec         ^Query parsed-q
+        ;; Datascript ≥1.5 renamed :find to :return.  Access the fields
+        ;; directly to avoid nil lookups when keywords change.
+        find         (or (.-return qrec) (.-find qrec))
+        target       (or find parsed-q)
+        find-elements (dp/find-elements target)
+        find-vars    (map (fn [^Variable v] (.-symbol v)) (dp/find-vars target))
+        result-arity (count find-elements)
+        with         (.-with qrec)
+        all-vars     (concat find-vars (map (fn [^Variable v] (.-symbol v)) with))
+        wheres       (.-where qrec)
+        in-bindings  (.-in qrec)
+        context      (-> (datascript.query.Context. [] {} {})
+                         (resolve-ins in-bindings inputs))
+        results      (-> context
+                         (dq/-q wheres)
+                         (collect all-vars))]
     (cond->> results
-      (:with q)
+      with
       (mapv #(vec (subvec % 0 result-arity)))
       (some dp/aggregate? find-elements)
       (dq/aggregate find-elements context)
       (some dp/pull? find-elements)
       (pull find-elements context)
-      true (dq/-post-process find))))
+      true (post-process target))))
