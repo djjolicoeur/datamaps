@@ -1,7 +1,6 @@
 (ns datamaps.core
   (:require [datamaps.query :as d]
             [datamaps.facts :as df]
-            [datascript.query :as dq]
             [clojure.pprint :as pprint])
   (:import [datamaps.facts FactStore] ))
 
@@ -44,19 +43,14 @@
 (defn id->entity
   "Find entity for id, if id exists"
   [facts id]
-  (q '[:find ?e .
-       :in $ ?e
-       :where [?e _ _]]
-     facts id))
+  (when (df/entity-exists? facts id)
+    id))
 
 (defn entity->datums
   "Find the datums related to this ID"
   [facts id]
-  (q '[:find ?a ?v
-       :in $ ?id
-       :where
-       [?id ?a ?v]]
-     facts id))
+  (->> (df/entity-datoms facts id)
+       (map (fn [[_ a v]] [a v]))))
 
 (declare entity entity-lookup resolve-coll resolve-ref)
 
@@ -79,11 +73,7 @@
 (defn- entity-keys
   "find all attribute keys for a given entity"
   [e]
-  (->> (d/q '[:find [?a ...]
-              :in $ ?e
-              :where [?e ?a _]]
-            @(.-facts e) (.-id e))
-       set))
+  (df/entity-attrs @(.-facts e) (.-id e)))
 
 
 (defn- touch-entity
@@ -162,27 +152,18 @@
 (defn- output-val
   "Find value given an entity and an attribute key"
   [e k]
-  (d/q '[:find ?v .
-         :in $ ?e ?a
-         :where [?e ?a ?v]]
-       @(.-facts e) (.-id e) k))
+  (df/first-attr-value @(.-facts e) (.-id e) k))
 
 (defn- output-ref
-  "Ensure we convert ref values to entites referencing the same factstore"
+  "Ensure we convert ref values to entities referencing the same factstore"
   [e k]
-  (when-let [ref (d/q '[:find ?v .
-                        :in $ ?e ?a
-                        :where [?e ?a ?v]]
-                      @(.-facts e) (.-id e) k)]
+  (when-let [ref (df/first-attr-value @(.-facts e) (.-id e) k)]
     (Entity. (.-facts e) ref nil)))
 
 (defn- nested-ref
   "Is a nested value a reference?"
   [e coll-member]
-  (d/q '[:find ?e .
-         :in $ ?e
-         :where [?e _ _]]
-       @(.-facts e) coll-member))
+  (df/entity-exists? @(.-facts e) coll-member))
 
 (defn- coll-member
   "Output an entity if collection member is a ref, otherwise the value"
@@ -194,19 +175,13 @@
 (defn- output-coll
   "output entity collections"
   [e k]
-  (let [coll (d/q '[:find [?v ...]
-                    :in $ ?e ?k
-                    :where [?e ?k ?v]]
-                  @(.-facts e) (.-id e) k)]
+  (let [coll (df/attr-values @(.-facts e) (.-id e) k)]
     (mapv (partial coll-member e) coll)))
 
 (defn- output-reverse-ref
   "lookup reverse refs in the reverse attr partition and convert to entity"
   [e k]
-  (when-let [ref (dq/q '[:find ?v .
-                         :in $ ?e ?k
-                         :where [?e ?k ?v]]
-                       (df/reverse-partition @(.-facts e)) (.-id e) k)]
+  (when-let [ref (df/reverse-value @(.-facts e) (.-id e) k)]
     (Entity. (.-facts e) ref nil)))
 
 (defn- output-member
@@ -222,11 +197,10 @@
 (defn- lookup-type
   "find type for attribute k and entity e"
   [e k]
-  (let [t (dq/q '[:find [?v ...]
-                  :in $ ?e ?a
-                  :where [?e ?a ?v]]
-                (df/attr-partition @(.-facts e)) (.-id e) k)]
-    (if (some #{::df/coll} t) ::df/coll (first t))))
+  (let [attr-type (df/attr-meta @(.-facts e) (.-id e) k)]
+    (if (= attr-type df/coll-type)
+      df/coll-type
+      attr-type)))
 
 (defn entity-lookup
   "lookup entity e's attribute k"

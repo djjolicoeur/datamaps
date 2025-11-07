@@ -1,5 +1,4 @@
-(ns datamaps.facts
-  (:require [datascript.query :as dq]))
+(ns datamaps.facts)
 
 ;; Due to the unstsructured nature of map keys (i.e. no attribute constraints),
 ;; each generated entity will get its own attribute meta data for its keys.
@@ -35,11 +34,11 @@
   (attr-partition [this] attr-partition)
   (reverse-partition [this] reverse-partition))
 
-(defn- reverse-attr? [meta [e a v]]
-  (let [a-type (dq/q '[:find ?v .
-                       :in $ ?e ?a
-                       :where [?e ?a ?v]]
-                     meta e a)]
+(defn- reverse-attr? [meta [e a _]]
+  (let [a-type (some (fn [[me ma mv]]
+                       (when (and (= me e) (= ma a))
+                         mv))
+                     meta)]
     (identical? ::reverse-ref a-type)))
 
 (defn- fact? [meta [e a v]]
@@ -146,10 +145,50 @@
 ;; Functions for retrieving entities by their generated ID
 
 (defn attr-meta
-  "Find the attributes meta data => (::coll | ::ref | ::val | ::reverse-ref)"
+  "Find the attribute metadata => (::coll | ::ref | ::val | ::reverse-ref)
+   Prefers collection metadata when multiple markers exist for the same attribute."
   [facts id attr]
-  (dq/q '[:find ?type .
-          :in $ ?id ?attr
-          :where
-          [?id ?attr ?type]]
-        (attr-partition facts) id attr))
+  (let [types (keep (fn [[eid a type]]
+                      (when (and (= eid id) (= a attr))
+                        type))
+                    (attr-partition facts))
+        preferred [coll-type ref-type reverse-ref-type val-type]]
+    (some (set types) preferred)))
+
+(defn entity-exists?
+  "True when the fact partition contains any datoms for eid."
+  [facts eid]
+  (some (fn [[e _ _]] (= e eid)) (fact-partition facts)))
+
+(defn entity-datoms
+  "Return all datoms for eid from the fact partition."
+  [facts eid]
+  (filter (fn [[e _ _]] (= e eid)) (fact-partition facts)))
+
+(defn entity-attrs
+  "Return the set of attributes present for eid."
+  [facts eid]
+  (->> (entity-datoms facts eid)
+       (map second)
+       set))
+
+(defn attr-values
+  "Return all values for eid/attr from the fact partition preserving duplicates."
+  [facts eid attr]
+  (->> (fact-partition facts)
+       (keep (fn [[e a v]]
+               (when (and (= e eid) (= a attr))
+                 v)))))
+
+(defn first-attr-value
+  "Return the first value for eid/attr or nil."
+  [facts eid attr]
+  (first (attr-values facts eid attr)))
+
+(defn reverse-value
+  "Return the single entity id referenced by the reverse attribute, if present."
+  [facts eid reverse-attr]
+  (some (fn [[e a v]]
+          (when (and (= e eid) (= a reverse-attr))
+            v))
+        (reverse-partition facts)))

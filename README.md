@@ -5,7 +5,7 @@ query arbitrary maps.
 
 ## Build Status and Dependency Information
 
-[![Circle CI](https://circleci.com/gh/djjolicoeur/datamaps.svg?style=shield)](https://circleci.com/gh/djjolicoeur/datamaps)
+[![CI](https://github.com/djjolicoeur/datamaps/actions/workflows/ci.yml/badge.svg)](https://github.com/djjolicoeur/datamaps/actions/workflows/ci.yml)
 
 
 [![Clojars Project](https://img.shields.io/clojars/v/datamaps.svg)](https://clojars.org/datamaps)
@@ -17,21 +17,19 @@ query arbitrary maps.
  * Performance is atrocious, but can be improved. Space and time complexities have not
    even been considered at this point.
  * ~~Does not support the Pull api currently~~  added in 0.1.1-SNAPSHOT
- * ~~Need to figure out if I can add the ability to choose query engine provider
-   so people can use datascripts engine, should they choose.  I use datomic in my
-   projects, so I went with that first.~~ as of 0.1.1-SNAPSHOT,
-   the datascript query engine is being used
+ * Ships with a lightweight, Datomic-compatible query engine tuned specifically for
+   map-backed fact stores—no Datascript dependency required.
  * Needs more robust testing and validation as it is almost certainly full of bugs and
   warts.
 
 ### NEW!
 
- * Custom Pull API adapted from datscripts pull-api
+ * Custom pull API inspired by Datascript's implementation but tailored for `IFactStore`.
  * Collections maintain all original elements rather than being
    truncated by set semantics.  In a true DB, this is desired, but we are
    abstracting maps, and should maintain consistency with the original map.
- * Datascript is included as a dependency.
- * Entity interface analogous to datomic and datascripts enabling the ability to
+ * Built-in query engine so you can `q` against facts immediately after calling `dm/facts`.
+ * Entity interface analogous to Datomic and Datascript enabling the ability to
    "walk" the map via cursor.
  * Reverse reference implementation for entities.
 
@@ -391,7 +389,7 @@ Examples:
 We can query across multiple sets of facts via `datamaps.core/q`, however
 `datamaps.core/q` is only designed to query against facts that satisfy the `IFactStore`
 protocol.  If you wish to query against a database and a set of facts you should use
-the databases query engine, i.e. datascript or datomic (more on this later).
+the database's native query engine (e.g. Datomic or Datascript) against the fact partition.
 
 Example:
 
