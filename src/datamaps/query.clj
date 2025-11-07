@@ -1,125 +1,311 @@
 (ns datamaps.query
-  (:require [datascript.query :as dq]
-            [datascript.parser :as dp]
-            [datascript.pull-parser :as dpp]
-            [datascript.lru :as lru]
+  (:require [clojure.string :as str]
             [datamaps.facts :as df]
-            [datamaps.pull :as dpa])
-  (:import [datascript.parser BindColl BindIgnore BindScalar BindTuple
-            Constant FindColl FindRel FindScalar FindTuple PlainSymbol
-                                RulesVar SrcVar Variable]))
+            [datamaps.pull :as dpull]))
 
-(def ^:private lru-cache-size 100)
+;; Basic aggregation support
+(def ^:private aggregations
+  {'sum   (fn [values] (reduce + 0 values))
+   'count (fn [values] (count values))
+   'max   (fn [values] (when (seq values) (reduce max values)))
+   'min   (fn [values] (when (seq values) (reduce min values)))
+   'avg   (fn [values]
+            (if (seq values)
+              (/ (reduce + values) (double (count values)))
+              0.0))})
 
-(defn rel-with-attr [context sym]
-  (some #(when (contains? (:attrs %) sym) %) (:rels context)))
+(defn- wildcard? [v]
+  (= '_ v))
 
-(defn context-resolve-val [context sym]
-  (when-let [rel (rel-with-attr context sym)]
-    (when-let [tuple (first (:tuples rel))]
-      (get tuple ((:attrs rel) sym)))))
+(defn- source-symbol? [sym]
+  (and (symbol? sym)
+       (-> sym name (str/starts-with? "$"))))
 
+(defn- query-var? [sym]
+  (and (symbol? sym)
+       (-> sym name (str/starts-with? "?"))))
 
-(defprotocol IContextResolve
-  (-context-resolve [var context]))
+(defn- collect-sections [items]
+  (loop [forms items
+         current nil
+         sections {}]
+    (if (seq forms)
+      (let [form (first forms)]
+        (if (keyword? form)
+          (recur (rest forms) form sections)
+          (recur (rest forms)
+                 current
+                 (if current
+                   (update sections current (fnil conj []) form)
+                   sections))))
+      sections)))
 
-(extend-protocol IContextResolve
-  Variable
-  (-context-resolve [var context]
-    (context-resolve-val context (.-symbol var)))
-  SrcVar
-  (-context-resolve [var context]
-    (get-in context [:sources (.-symbol var)]))
-  PlainSymbol
-  (-context-resolve [var _]
-    (get dq/built-in-aggregates (.-symbol var)))
-  Constant
-  (-context-resolve [var _]
-        (.-value var)))
-
-(defn resolve-pull-source [var context]
-  (get-in context [:pull-sources (.-symbol var)]))
-
-(defn pull [find-elements context resultset]
-  (let [resolved (for [find find-elements]
-                   (when (dp/pull? find)
-                     [(resolve-pull-source (:source find) context)
-                      (dpp/parse-pull
-                       (-context-resolve (:pattern find) context))]))]
-    (for [tuple resultset]
-      (mapv (fn [env el]
-              (if env
-                (let [[src spec] env]
-                  (dpa/pull-spec src spec [el] false))
-                el))
-            resolved
-            tuple))))
-
-
-
-(defn resolve-in [context [binding value]]
+(defn- coerce-vector [v]
   (cond
-    (and (instance? BindScalar binding)
-         (instance? SrcVar (:variable binding)))
-    (-> context
-        (update-in [:sources]
-                   assoc (get-in binding [:variable :symbol]) (df/fact-partition value))
-        (update-in [:pull-sources] assoc (get-in binding [:variable :symbol]) value))
-    (and (instance? BindScalar binding)
-         (instance? RulesVar (:variable binding)))
-    (assoc context :rules (dq/parse-rules value))
+    (nil? v) []
+    (vector? v) v
+    (seq? v) (vec v)
+    :else [v]))
+
+(defn- normalize-query [q]
+  (cond
+    (map? q)
+    (-> q
+        (update :find coerce-vector)
+        (update :where coerce-vector)
+        (update :in coerce-vector))
+
+    (vector? q)
+    (let [sections (collect-sections q)]
+      {:find  (coerce-vector (:find sections))
+       :where (coerce-vector (:where sections))
+       :in    (coerce-vector (:in sections))
+       :with  (coerce-vector (:with sections))
+       :rules (:rules sections)})
+
     :else
-    (update-in context [:rels] conj (dq/in->rel binding value))))
+    (throw (ex-info "Unsupported query representation" {:query q}))))
 
-(defn resolve-ins [context bindings values]
-    (reduce resolve-in context (zipmap bindings values)))
+(defn- ensure-section [q k]
+  (if-let [section (get q k)]
+    section
+    (throw (ex-info (str "Query missing " k) {:query q}))))
 
-(defn collect
-  "Override datascript's collect fn to not
-   restrict results to set"
-  [context symbols]
-  (->> (dq/-collect context symbols)
-       (map vec)))
+(defn- normalize-source [value]
+  (cond
+    (df/factstore? value)
+    {:datoms (vec (df/fact-partition value))
+     :fact-store value}
 
-(def ^:private query-cache (volatile! (lru/lru lru-cache-size)))
+    (coll? value)
+    {:datoms (vec value)}
 
-(defn memoize-parse-query
-  "Cache parsed queries"
-  [q]
-  (if-let [cached (get @query-cache q nil)]
-    cached
-    (let [qp (dp/parse-query q)]
-      (vswap! query-cache assoc q qp)
-      qp)))
+    :else (throw (ex-info "Unsupported data source" {:value value}))))
 
+(defn- bind-inputs [in-specs inputs]
+  (when (not= (count in-specs) (count inputs))
+    (throw (ex-info "Input arity mismatch"
+                    {:expected (count in-specs)
+                     :provided (count inputs)})))
+  (loop [specs in-specs
+         vals inputs
+         context {:sources {}
+                  :default-source nil
+                  :default-fact-store nil}
+         binding {}]
+    (if (seq specs)
+      (let [spec (first specs)
+            value (first vals)]
+        (cond
+          (= '_ spec)
+          (recur (rest specs) (rest vals) context binding)
+
+          (source-symbol? spec)
+          (let [source (normalize-source value)
+                context (-> context
+                            (assoc-in [:sources spec] source)
+                            (update :default-source #(or % spec))
+                            (update :default-fact-store #(or % (:fact-store source))))]
+            (recur (rest specs) (rest vals) context binding))
+
+          (symbol? spec)
+          (recur (rest specs) (rest vals) context (assoc binding spec value))
+
+          :else
+          (throw (ex-info "Unsupported :in binding form" {:binding spec}))))
+      {:context context
+       :binding binding})))
+
+(defn- variable-symbol? [term binding]
+  (and (symbol? term)
+       (or (query-var? term)
+           (contains? binding term))))
+
+(defn- unify-term [binding term value]
+  (cond
+    (nil? binding) nil
+    (wildcard? term) binding
+    (variable-symbol? term binding)
+    (if (contains? binding term)
+      (when (= (binding term) value) binding)
+      (assoc binding term value))
+    :else
+    (when (= term value) binding)))
+
+(defn- predicate-clause? [clause]
+  (and (vector? clause)
+       (= 1 (count clause))
+       (seq? (first clause))))
+
+(defn- resolve-fn [sym]
+  (let [ns-name (namespace sym)
+        name (symbol (name sym))]
+    (if ns-name
+      (do (require (symbol ns-name))
+          (or (ns-resolve (symbol ns-name) name)
+              (throw (ex-info "Unable to resolve function" {:symbol sym}))))
+      (or (ns-resolve 'clojure.core sym)
+          (throw (ex-info "Unable to resolve clojure.core function"
+                          {:symbol sym}))))))
+
+(defn- resolve-value [binding term]
+  (cond
+    (and (symbol? term) (contains? binding term))
+    (binding term)
+
+    (and (symbol? term) (query-var? term))
+    (throw (ex-info "Unbound logic variable" {:variable term}))
+
+    :else term))
+
+(defn- eval-predicate [bindings clause]
+  (let [form (first clause)
+        f (resolve-fn (first form))
+        args (rest form)]
+    (reduce (fn [acc binding]
+              (let [values (map #(resolve-value binding %) args)]
+                (if (apply f values)
+                  (conj acc binding)
+                  acc)))
+            [] bindings)))
+
+(defn- source-datoms [context sym]
+  (or (get-in context [:sources sym :datoms])
+      (throw (ex-info "Unknown data source" {:source sym}))))
+
+(defn- eval-pattern [bindings clause context]
+  (let [[maybe-source & parts] clause
+        [source terms] (if (source-symbol? maybe-source)
+                         [maybe-source parts]
+                         [(:default-source context) clause])]
+    (when (or (not source) (not= 3 (count terms)))
+      (throw (ex-info "Malformed pattern clause" {:clause clause})))
+    (let [[e-term a-term v-term] terms
+          datoms (source-datoms context source)]
+      (reduce (fn [acc binding]
+                (reduce (fn [inner [e a v]]
+                          (if-let [b (-> binding
+                                         (unify-term e-term e)
+                                         (unify-term a-term a)
+                                         (unify-term v-term v))]
+                            (conj inner b)
+                            inner))
+                        acc
+                        datoms))
+              [] bindings))))
+
+(defn- eval-clause [bindings clause context]
+  (cond
+    (predicate-clause? clause) (eval-predicate bindings clause)
+    (vector? clause) (eval-pattern bindings clause context)
+    :else (throw (ex-info "Unsupported clause type" {:clause clause}))))
+
+(defn- parse-find [find-spec]
+  (let [scalar? (and (seq find-spec) (= '. (last find-spec)))
+        elements (vec (if scalar? (butlast find-spec) find-spec))
+        coll-spec (some (fn [el]
+                          (when (and (vector? el)
+                                     (<= 2 (count el))
+                                     (= '... (last el)))
+                            el))
+                        elements)
+        type (cond
+               scalar? :scalar
+               coll-spec :collection
+               :else :relation)
+        parsed (if coll-spec
+                 {:type type
+                  :elements [(first coll-spec)]}
+                 {:type type
+                  :elements elements})]
+    (when (and (= :scalar (:type parsed))
+               (not= 1 (count (:elements parsed))))
+      (throw (ex-info "Scalar :find expects exactly one element" {:find find-spec})))
+    (when (and (= :collection (:type parsed))
+               (not= 1 (count (:elements parsed))))
+      (throw (ex-info "Collection :find expects exactly one element" {:find find-spec})))
+    parsed))
+
+(defn- aggregator-form? [form]
+  (and (seq? form)
+       (contains? aggregations (first form))))
+
+(defn- pull-form? [form]
+  (and (seq? form)
+       (= 'pull (first form))))
+
+(defn- aggregate-value [bindings form]
+  (let [agg-sym (first form)
+        term (second form)
+        agg-fn (get aggregations agg-sym)]
+    (when-not agg-fn
+      (throw (ex-info "Unknown aggregate" {:aggregate agg-sym})))
+    (let [values (->> bindings
+                      (map #(resolve-value % term))
+                      (remove nil?))]
+      (agg-fn values))))
+
+(defn- pull-value [binding form context]
+  (let [[_ eid-expr selector-expr] form
+        eid (resolve-value binding eid-expr)
+        selector (resolve-value binding selector-expr)
+        fact-store (:default-fact-store context)]
+    (when-not fact-store
+      (throw (ex-info "Pull requires a fact store bound to default source" {})))
+    (when eid
+      (dpull/pull fact-store selector eid))))
+
+(defn- evaluate-element [binding element context]
+  (cond
+    (pull-form? element) (pull-value binding element context)
+    (symbol? element) (resolve-value binding element)
+    :else element))
+
+(defn- render-aggregate [bindings elements type]
+  (let [row (mapv #(aggregate-value bindings %) elements)]
+    (case type
+      :scalar (first row)
+      :collection row
+      :relation [row])))
+
+(defn- render-relation [bindings elements context]
+  (mapv (fn [binding]
+          (mapv #(evaluate-element binding % context) elements))
+        bindings))
+
+(defn- format-results [bindings {:keys [type elements]} context]
+  (let [agg-count (count (filter aggregator-form? elements))]
+    (cond
+      (pos? agg-count)
+      (do
+        (when (not= agg-count (count elements))
+          (throw (ex-info "Mixing aggregates with raw fields is not supported"
+                          {:find elements})))
+        (render-aggregate bindings elements type))
+
+      (= :collection type)
+      (mapv #(evaluate-element % (first elements) context) bindings)
+
+      :else
+      (let [rows (render-relation bindings elements context)]
+        (case type
+          :scalar (some-> rows first first)
+          :relation rows)))))
 
 (defn q
-  "Override datascript's query fn to avoid casting results
-   to a set. This allows the ability to run aggregations on
-   collections contained within our maps as well as get our
-   maps back from the collection of facts as they were passed in,
-   cardinality not withstanding."
-  [q & inputs]
-  (let [parsed-q      (memoize-parse-query q)
-        find          (:find parsed-q)
-        find-elements (dp/find-elements find)
-        find-vars     (dp/find-vars find)
-        result-arity  (count find-elements)
-        with          (:with parsed-q)
-        all-vars      (concat find-vars (map :symbol with))
-        q             (cond-> q
-                        (sequential? q) dp/query->map)
-        wheres        (:where q)
-        context       (-> (datascript.query.Context. [] {} {})
-                          (resolve-ins (:in parsed-q) inputs))
-        results       (-> context
-                          (dq/-q wheres)
-                          (collect all-vars))]
-    (cond->> results
-      (:with q)
-      (mapv #(vec (subvec % 0 result-arity)))
-      (some dp/aggregate? find-elements)
-      (dq/aggregate find-elements context)
-      (some dp/pull? find-elements)
-      (pull find-elements context)
-      true (dq/-post-process find))))
+  "Evaluate a datalog-style query against one or more fact partitions."
+  [query & inputs]
+  (let [qmap        (normalize-query query)
+        find-spec   (parse-find (coerce-vector (ensure-section qmap :find)))
+        where-spec  (coerce-vector (ensure-section qmap :where))
+        raw-in      (coerce-vector (:in qmap))
+        in-spec     (vec (if (seq raw-in) raw-in '[$]))
+        inputs      (vec inputs)
+        {:keys [context binding]} (bind-inputs in-spec inputs)
+        initial-binding (or binding {})
+        start-bindings  [initial-binding]
+        final-bindings  (reduce (fn [result clause]
+                                  (eval-clause result clause context))
+                                start-bindings
+                                where-spec)]
+    (format-results final-bindings find-spec context)))

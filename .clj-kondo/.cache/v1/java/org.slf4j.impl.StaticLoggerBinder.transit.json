@@ -1,0 +1,1 @@
+["^ ","~:members",["^ ","REQUESTED_API_VERSION",["~#set",[["^ ","~:flags",["^2",["~:public","~:static","~:field"]]]]],"getSingleton",["^2",[["^ ","^3",["^2",["~:method","^4","^5","~:final"]]]]],"getLoggerFactory",["^2",[["^ ","^3",["^2",["^8","^4"]]]]],"getLoggerFactoryClassStr",["^2",[["^ ","^3",["^2",["^8","^4"]]]]]]]
