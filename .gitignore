@@ -9,4 +9,4 @@ pom.xml.asc
 /.nrepl-port
 .hgignore
 .hg/
-.clj-kondo/cache
+.clj-kondo/.cache
