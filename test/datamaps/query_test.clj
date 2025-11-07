@@ -50,6 +50,16 @@
     (is (= 3 (count cats)))
     (is (= 2 (count (filter #(= "Islay" %) cats))))))
 
+(deftest with-clause-removes-duplicates
+  (let [facts (user-facts)
+        names (dm/q '[:find ?name
+                      :with ?pet
+                      :where
+                      [?e :person/name ?name]
+                      [?e :person/pets ?pet]]
+                    facts)]
+    (is (= #{["Ada"] ["Ben"]} (set names)))))
+
 (deftest aggregate-support
   (let [facts (user-facts)
         total (dm/q '[:find (sum ?age) .
@@ -92,3 +102,11 @@
     (is (= {:person/name "Ada"
             :person/city {:city/name "Annapolis"}}
            result))))
+
+(deftest pull-supports-explicit-source
+  (let [result (dm/q '[:find (pull $aliases ?city [:alias/nickname]) .
+                       :in $aliases
+                       :where
+                       [$aliases ?city :alias/name "Annapolis"]]
+                     alias-facts)]
+    (is (= {:alias/nickname "Sailing Capital"} result))))

@@ -1,1 +1,0 @@
-["^ ","~:members",["^ ","getReceiveBufferSizePredictor",["~#set",[["^ ","~:flags",["^2",["~:method","~:public"]]]]],"setReceiveBufferSizePredictor",["^2",[["^ ","^3",["^2",["^4","^5"]]]]],"getReceiveBufferSizePredictorFactory",["^2",[["^ ","^3",["^2",["^4","^5"]]]]],"setReceiveBufferSizePredictorFactory",["^2",[["^ ","^3",["^2",["^4","^5"]]]]]]]

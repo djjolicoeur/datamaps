@@ -5,7 +5,7 @@ query arbitrary maps.
 
 ## Build Status and Dependency Information
 
-[![Circle CI](https://circleci.com/gh/djjolicoeur/datamaps.svg?style=shield)](https://circleci.com/gh/djjolicoeur/datamaps)
+[![CI](https://github.com/djjolicoeur/datamaps/actions/workflows/ci.yml/badge.svg)](https://github.com/djjolicoeur/datamaps/actions/workflows/ci.yml)
 
 
 [![Clojars Project](https://img.shields.io/clojars/v/datamaps.svg)](https://clojars.org/datamaps)

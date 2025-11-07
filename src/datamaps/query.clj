@@ -245,13 +245,34 @@
                       (remove nil?))]
       (agg-fn values))))
 
+(defn- pull-source [source context binding]
+  (cond
+    (nil? source)
+    (:default-fact-store context)
+
+    (source-symbol? source)
+    (get-in context [:sources source :fact-store])
+
+    (symbol? source)
+    (let [value (resolve-value binding source)]
+      (when (df/factstore? value) value))
+
+    (df/factstore? source)
+    source
+
+    :else nil))
+
 (defn- pull-value [binding form context]
-  (let [[_ eid-expr selector-expr] form
+  (let [[_ & args] form
+        [source-expr eid-expr selector-expr] (if (>= (count args) 3)
+                                               [(first args) (second args) (nth args 2)]
+                                               [nil (first args) (second args)])
+        fact-store (pull-source source-expr context binding)
         eid (resolve-value binding eid-expr)
-        selector (resolve-value binding selector-expr)
-        fact-store (:default-fact-store context)]
+        selector (resolve-value binding selector-expr)]
     (when-not fact-store
-      (throw (ex-info "Pull requires a fact store bound to default source" {})))
+      (throw (ex-info "Pull requires a fact store bound to default source or explicit source"
+                      {:source source-expr})))
     (when eid
       (dpull/pull fact-store selector eid))))
 
@@ -260,6 +281,11 @@
     (pull-form? element) (pull-value binding element context)
     (symbol? element) (resolve-value binding element)
     :else element))
+
+(defn- distinct-if-needed [values with-vars]
+  (if (seq with-vars)
+    (-> values distinct vec)
+    values))
 
 (defn- render-aggregate [bindings elements type]
   (let [row (mapv #(aggregate-value bindings %) elements)]
@@ -273,7 +299,7 @@
           (mapv #(evaluate-element binding % context) elements))
         bindings))
 
-(defn- format-results [bindings {:keys [type elements]} context]
+(defn- format-results [bindings {:keys [type elements]} context with-vars]
   (let [agg-count (count (filter aggregator-form? elements))]
     (cond
       (pos? agg-count)
@@ -281,13 +307,18 @@
         (when (not= agg-count (count elements))
           (throw (ex-info "Mixing aggregates with raw fields is not supported"
                           {:find elements})))
-        (render-aggregate bindings elements type))
+        (let [result (render-aggregate bindings elements type)]
+          (if (and (= :relation type) (seq with-vars))
+            (distinct-if-needed result with-vars)
+            result)))
 
       (= :collection type)
-      (mapv #(evaluate-element % (first elements) context) bindings)
+      (let [values (mapv #(evaluate-element % (first elements) context) bindings)]
+        (distinct-if-needed values with-vars))
 
       :else
-      (let [rows (render-relation bindings elements context)]
+      (let [rows (render-relation bindings elements context)
+            rows (distinct-if-needed rows with-vars)]
         (case type
           :scalar (some-> rows first first)
           :relation rows)))))
@@ -300,6 +331,7 @@
         where-spec  (coerce-vector (ensure-section qmap :where))
         raw-in      (coerce-vector (:in qmap))
         in-spec     (vec (if (seq raw-in) raw-in '[$]))
+        with-vars   (coerce-vector (:with qmap))
         inputs      (vec inputs)
         {:keys [context binding]} (bind-inputs in-spec inputs)
         initial-binding (or binding {})
@@ -308,4 +340,4 @@
                                   (eval-clause result clause context))
                                 start-bindings
                                 where-spec)]
-    (format-results final-bindings find-spec context)))
+    (format-results final-bindings find-spec context with-vars)))
